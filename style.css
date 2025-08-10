@@ -1,0 +1,71 @@
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  background-color: #f4f4f4;
+}
+
+h1 {
+  text-align: center;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+  background-color: white;
+}
+
+th, td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: center;
+}
+
+th {
+  background-color: #2196f3;
+  color: white;
+}
+
+input[type="text"], input[type="number"] {
+  padding: 5px;
+  margin: 5px;
+  width: 150px;
+}
+
+button {
+  padding: 5px 10px;
+  margin: 5px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #2196f3;
+  color: white;
+}
+
+.formulario {
+  margin-top: 20px;
+  background: white;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+input[type="file"] {
+  margin-top: 10px;
+}
+label {
+  display: inline-block;
+  margin: 5px 15px 5px 0;
+}
+.resumen {
+  padding: 15px;
+  margin-bottom: 20px;
+  border: 2px solid #ccc;
+  border-radius: 10px;
+  background-color: #f9f9f9;
+}
+
+.resumen label {
+  display: inline-block;
+  margin: 5px 15px 5px 0;
+}

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EmprendeCash</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Emprendecash</h1>
+  <p>Fecha actual: <span id="fechaActual"></span></p>
+
+  <!-- Encabezado de resumen -->
+  <div class="resumen">
+    <label>Mercado: <input type="text" id="mercado" value="Pariachi"></label>
+    <label>Representante: <input type="text" id="representante" value="Condor Huaynate De Salas, Roxana Maribel"></label>
+    <label>Fecha: <input type="date" id="fecha" value="2024-10-09"></label>
+    <br>
+    <label>Total Créd.: <input type="number" id="totalCred" value="111"></label>
+    <label>Créd. Vigente: <input type="number" id="credVigente" value="64"></label>
+    <label>Créd. Vencidos: <input type="number" id="credVencidos" value="47"></label>
+    <label>Total Deuda: <input type="text" id="totalDeuda" value="S/ 8,700.76"></label>
+    <label>Total Cobranza: <input type="text" id="totalCobranza" value="S/ 1,882.26"></label>
+    <br>
+    <label>Saldo Vigente: <input type="text" id="saldoVigente" value="S/ 20,665.71"></label>
+    <label>Saldo Vencido: <input type="text" id="saldoVencido" value="S/ 20,548.30"></label>
+    <label>Saldo Alto Riesgo: <input type="text" id="saldoAltoRiesgo" value="S/ 11,076.10"></label>
+    <label>Saldo Bajo Riesgo: <input type="text" id="saldoBajoRiesgo" value="S/ 8,643.00"></label>
+    <label>Saldo Refinanciado: <input type="text" id="saldoRefinanciado" value="S/ 11,090.00"></label>
+  </div>
+
+  <!-- Formulario para agregar cliente -->
+  <div class="formulario">
+    <h3>Agregar Cliente</h3>
+    <input type="text" id="dni" placeholder="DNI" required />
+    <input type="text" id="nombre" placeholder="Nombre completo" required />
+    <input type="text" id="telefono" placeholder="Teléfono" />
+    <input type="number" id="monto" placeholder="Monto total" required />
+    <input type="number" id="cuota" placeholder="Cuota" />
+    <button onclick="agregarCliente()">Agregar Cliente</button>
+  </div>
+
+  <!-- Buscador -->
+  <div class="formulario">
+    <h3>Buscar Cliente</h3>
+    <input type="text" id="buscador" placeholder="Buscar por nombre o DNI..." oninput="buscarCliente()">
+  </div>
+
+  <!-- Exportar e importar -->
+  <div class="formulario">
+    <button onclick="exportarExcel()">📤 Exportar Excel</button>
+    <input type="file" id="importarArchivo" accept=".csv" onchange="importarCSV(event)">
+  </div>
+
+  <!-- Tabla -->
+  <table>
+    <thead>
+      <tr>
+        <th>DNI</th>
+        <th>Nombre</th>
+        <th>Teléfono</th>
+        <th>Monto Total</th>
+        <th>Saldo</th>
+        <th>Tipo</th>
+        <th>DT</th>
+        <th>CP</th>
+        <th>Deuda Vend</th>
+        <th>Cuota</th>
+        <th>Pago</th>
+        <th>Eliminar</th>
+      </tr>
+    </thead>
+    <tbody id="cuerpoTabla"></tbody>
+  </table>
+
+  <script src="script.js"></script>
+</body>
+</html>
