@@ -1,71 +1,114 @@
-body {
-  font-family: Arial, sans-serif;
-  padding: 20px;
-  background-color: #f4f4f4;
+/* Que html y body ocupen toda la pantalla */
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #f9f9f9;
+  color: #333;
+  box-sizing: border-box;
+  overflow: hidden; /* para evitar scroll en la ventana principal */
 }
 
+/* Contenedor principal que ocupa toda la ventana */
+body > .container {
+  height: 100vh; /* 100% altura visible ventana */
+  width: 100vw;  /* 100% ancho ventana */
+  padding: 20px; /* padding interno */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start; /* arriba */
+  background: #f9f9f9;
+}
+
+/* Título centrado */
 h1 {
+  color: #222;
+  margin: 0 0 20px 0;
   text-align: center;
+  flex-shrink: 0;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 20px;
-  background-color: white;
+/* Formularios y secciones principales */
+.login-section, .add-form, .tabs {
+  width: 100%;       /* ocupan todo el ancho del container */
+  max-width: none;   /* quitamos límite */
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;  /* scroll interno si contenido crece */
+  flex-grow: 1;      /* que crezcan para ocupar espacio disponible */
+  margin-bottom: 20px;
 }
 
-th, td {
-  border: 1px solid #ddd;
-  padding: 8px;
-  text-align: center;
-}
-
-th {
-  background-color: #2196f3;
-  color: white;
-}
-
-input[type="text"], input[type="number"] {
-  padding: 5px;
-  margin: 5px;
-  width: 150px;
-}
-
+/* Inputs y botones 100% ancho */
+input[type="text"],
+input[type="password"],
+input[type="date"],
 button {
-  padding: 5px 10px;
-  margin: 5px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Botones */
+button {
+  padding: 10px 18px;
+  margin-top: 10px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 6px;
   cursor: pointer;
+  font-weight: 600;
+  font-size: 1em;
+  transition: background 0.3s ease;
 }
 
 button:hover {
-  background-color: #2196f3;
-  color: white;
+  background: #2980b9;
 }
 
-.formulario {
-  margin-top: 20px;
-  background: white;
-  padding: 10px;
-  border-radius: 8px;
+/* Tab content y tabla para que se adapten */
+.tab-content {
+  padding: 20px 30px;
+  display: block;
+  overflow-x: auto;
+  max-height: calc(100% - 40px); /* para que no pase el contenedor */
 }
 
-input[type="file"] {
-  margin-top: 10px;
-}
-label {
-  display: inline-block;
-  margin: 5px 15px 5px 0;
-}
-.resumen {
-  padding: 15px;
-  margin-bottom: 20px;
-  border: 2px solid #ccc;
-  border-radius: 10px;
-  background-color: #f9f9f9;
+.tab-content table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
 }
 
-.resumen label {
-  display: inline-block;
-  margin: 5px 15px 5px 0;
+.tab-content th, .tab-content td {
+  padding: 12px 15px;
+  border: 1px solid #ddd;
+  text-align: left;
+  vertical-align: middle;
+  word-wrap: break-word;
+  max-width: 200px;
+}
+
+/* Responsividad para pantallas pequeñas */
+@media (max-width: 600px) {
+  body > .container {
+    padding: 10px;
+  }
+  .tab-content {
+    padding: 10px 15px;
+  }
+  .tab-content table {
+    min-width: unset;
+    font-size: 0.9em;
+  }
+  .tab-content th, .tab-content td {
+    max-width: none;
+    padding: 8px 10px;
+  }
 }

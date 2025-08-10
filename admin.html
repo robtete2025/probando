@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Panel Administrador - EmprendeCash</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Panel de Administrador</h1>
+    <nav>
+      <a href="index.html">Inicio</a>
+      <a href="trabajador.html">Vista de Trabajador</a>
+    </nav>
+  </header>
+
+  <main>
+    <h2>Lista de Clientes</h2>
+    <table id="tabla-clientes">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>DNI</th>
+          <th>Teléfono</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Filas generadas por JS -->
+      </tbody>
+    </table>
+
+    <h2>Registrar Cliente</h2>
+    <form id="form-cliente">
+      <input type="text" placeholder="Nombre" id="nombre" required>
+      <input type="text" placeholder="DNI" id="dni" required>
+      <input type="text" placeholder="Teléfono" id="telefono" required>
+      <button type="submit">Agregar Cliente</button>
+    </form>
+  </main>
+
+  <script src="js/script.js"></script>
+</body>
+</html>
