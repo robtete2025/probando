@@ -1,332 +1,375 @@
-const buttons = document.querySelectorAll('.tab-buttons button[data-tab]');
-const contents = document.querySelectorAll('.tab-content');
+// --- Variables de datos (clientes y trabajadores de prueba) ---
+let clientes = [
+  {dni:"12345678", nombre:"Ana Pérez", lugar:"Lima", telefono:"987654321", montoTotal:1000, saldo:500, tipo:"DT", dt:"DT1", cp:"CP1", deudaVencida:200, cuota:100, fechaPago:"15/08/2025"},
+  {dni:"87654321", nombre:"Luis Gómez", lugar:"Arequipa", telefono:"912345678", montoTotal:1500, saldo:0, tipo:"CP", dt:"DT2", cp:"CP2", deudaVencida:0, cuota:150, fechaPago:"01/09/2025"},
+  {dni:"11223344", nombre:"María Ruiz", lugar:"Cusco", telefono:"999888777", montoTotal:1200, saldo:300, tipo:"DT", dt:"DT3", cp:"CP3", deudaVencida:100, cuota:120, fechaPago:"10/08/2025"}
+];
+let trabajadores = [
+  {nombre:"Carlos Torres", dni:"44556677", telefono:"987123456"},
+  {nombre:"Sofía Martínez", dni:"99887766", telefono:"912345679"}
+];
 
-const loginSection = document.getElementById('login-section');
-const mainContent = document.getElementById('main-content');
-const loginBtn = document.getElementById('login-btn');
-const passwordInput = document.getElementById('password');
-const loginError = document.getElementById('login-error');
-const logoutBtn = document.getElementById('logout-btn');
-
-const searchInput = document.getElementById('search-input');
-
-let currentRole = null; // "admin" or "worker"
-
-buttons.forEach(btn => {
-  btn.addEventListener('click', () => {
-    buttons.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-
-    const target = btn.getAttribute('data-tab');
-    contents.forEach(content => {
-      content.style.display = (content.id === target) ? 'block' : 'none';
-    });
-
-    searchInput.value = '';
-    filterTable('');
-
-    updateFormVisibility();
-  });
-});
-
-loginBtn.addEventListener('click', () => {
-  const pwd = passwordInput.value.trim();
-  if (pwd === 'cash2025') {
-    currentRole = 'admin';
-    loginSuccess();
-  } else if (pwd === 'exitos2025') {
-    currentRole = 'worker';
-    loginSuccess();
-  } else {
-    loginError.style.display = 'block';
-  }
-});
-
-function loginSuccess() {
-  loginError.style.display = 'none';
-  loginSection.style.display = 'none';
-  mainContent.style.display = 'block';
-  passwordInput.value = '';
-
-  setupEditButtons(currentRole);
-  updateFormVisibility();
-
-  updateDiasRestantesAll();
-}
-
-logoutBtn.addEventListener('click', () => {
-  currentRole = null;
-  mainContent.style.display = 'none';
-  loginSection.style.display = 'block';
-  clearEditing();
-  searchInput.value = '';
-  updateFormVisibility();
-});
-
-function setupEditButtons(role) {
-  const editButtons = document.querySelectorAll('.edit-btn');
-  const deleteButtons = document.querySelectorAll('.delete-btn');
-  
-  if(role === 'admin') {
-    editButtons.forEach(btn => {
-      btn.disabled = false;
-      btn.style.display = 'inline-block';
-      btn.addEventListener('click', startEditing);
-    });
-    deleteButtons.forEach(btn => {
-      btn.disabled = false;
-      btn.style.display = 'inline-block';
-      btn.addEventListener('click', deleteRow);
-    });
-  } else {
-    editButtons.forEach(btn => {
-      btn.disabled = true;
-      btn.style.display = 'none';
-      btn.removeEventListener('click', startEditing);
-    });
-    deleteButtons.forEach(btn => {
-      btn.disabled = true;
-      btn.style.display = 'none';
-      btn.removeEventListener('click', deleteRow);
-    });
-  }
-}
-
-function startEditing(e) {
-  const btn = e.target;
-  const tr = btn.closest('tr');
-
-  if(tr.classList.contains('editing')) return;
-
-  tr.classList.add('editing');
-
-  // Para editar, menos columnas días restantes y editar/eliminar
-  for(let i=0; i < tr.cells.length - 3; i++) {
-    const cell = tr.cells[i];
-    const text = cell.textContent;
-    cell.innerHTML = `<input type="text" value="${text}"/>`;
-  }
-
-  // Para fecha límite (col 6) usamos input date
-  const fechaCell = tr.cells[6];
-  const fechaText = fechaCell.textContent.trim();
-  fechaCell.innerHTML = `<input type="date" value="${fechaText}" />`;
-
-  // Columna días restantes (7) no editable, vacía
-  tr.cells[7].textContent = '';
-
-  // Botones guardar y cancelar
-  const editCell = tr.cells[tr.cells.length -3];
-  editCell.innerHTML = `
-    <button class="save-btn">💾</button>
-    <button class="cancel-btn">❌</button>
-  `;
-
-  editCell.querySelector('.save-btn').addEventListener('click', () => saveEdit(tr));
-  editCell.querySelector('.cancel-btn').addEventListener('click', () => cancelEdit(tr));
-}
-
-function saveEdit(tr) {
-  const inputs = tr.querySelectorAll('input');
-  inputs.forEach((input, idx) => {
-    tr.cells[idx].textContent = input.value.trim() || '—';
-  });
-
-  // Recalcular días restantes y aplicar color
-  updateDiasRestantes(tr);
-
-  finishEditing(tr);
-}
-
-function cancelEdit(tr) {
-  const inputs = tr.querySelectorAll('input');
-  inputs.forEach((input, idx) => {
-    tr.cells[idx].textContent = input.defaultValue || '—';
-  });
-
-  finishEditing(tr);
-}
-
-function finishEditing(tr) {
-  tr.classList.remove('editing');
-  const editCell = tr.cells[tr.cells.length -3];
-  editCell.innerHTML = `<button class="edit-btn">✏️</button>`;
-
-  if(currentRole === 'admin') {
-    editCell.querySelector('.edit-btn').addEventListener('click', startEditing);
-  }
-}
-
-function clearEditing() {
-  document.querySelectorAll('tr.editing').forEach(tr => {
-    cancelEdit(tr);
-  });
-}
-
-searchInput.addEventListener('input', () => {
-  const searchTerm = searchInput.value.toLowerCase();
-  filterTable(searchTerm);
-});
-
-function filterTable(searchTerm) {
-  const activeTab = document.querySelector('.tab-content:not([style*="display: none"])');
-  if (!activeTab) return;
-
-  const tbody = activeTab.querySelector('tbody');
-  if (!tbody) return;
-
-  Array.from(tbody.rows).forEach(row => {
-    const rowText = row.textContent.toLowerCase();
-    if(rowText.includes(searchTerm)) {
-      row.style.display = '';
-    } else {
-      row.style.display = 'none';
-    }
-  });
-}
-
-function updateFormVisibility() {
-  const clientesForm = document.getElementById('form-clientes');
-  const trabajadoresForm = document.getElementById('form-trabajadores');
-  const activeTabBtn = document.querySelector('.tab-buttons button.active');
-  if(!activeTabBtn) return;
-  const tab = activeTabBtn.getAttribute('data-tab');
-
-  if(currentRole === 'admin') {
-    clientesForm.style.display = (tab === 'clientes') ? 'block' : 'none';
-    trabajadoresForm.style.display = (tab === 'trabajadores') ? 'block' : 'none';
-  } else {
-    clientesForm.style.display = 'none';
-    trabajadoresForm.style.display = 'none';
-  }
-}
-
-// Añadir cliente
-const addClientForm = document.getElementById('add-client-form');
-addClientForm.addEventListener('submit', e => {
+// --- Login ---
+document.getElementById("loginForm")?.addEventListener("submit", function(e) {
   e.preventDefault();
-  const nombre = document.getElementById('cli-nombre').value.trim();
-  const telefono = document.getElementById('cli-telefono').value.trim();
-  const dni = document.getElementById('cli-dni').value.trim();
-  const lugar = document.getElementById('cli-lugar').value.trim();
-  const cuota = document.getElementById('cli-cuota').value.trim();
-  const monto = document.getElementById('cli-monto').value.trim();
-  const fechaLimite = document.getElementById('cli-fecha').value;
 
-  if(!nombre || !telefono || !dni || !lugar || !cuota || !monto || !fechaLimite) return;
+  const nombre = document.getElementById("username").value.trim();
+  const contraseña = document.getElementById("password").value;
 
-  const tbody = document.getElementById('clientes-tbody');
-  const tr = document.createElement('tr');
-
-  tr.innerHTML = `
-    <td>${nombre}</td>
-    <td>${telefono}</td>
-    <td>${dni}</td>
-    <td>${lugar}</td>
-    <td>${cuota}</td>
-    <td>${monto}</td>
-    <td>${fechaLimite}</td>
-    <td></td>
-    <td class="edit-col"><button class="edit-btn">✏️</button></td>
-    <td class="delete-col"><button class="delete-btn">🗑️</button></td>
-  `;
-
-  tbody.appendChild(tr);
-  updateDiasRestantes(tr);
-
-  if(currentRole === 'admin') {
-    tr.querySelector('.edit-btn').addEventListener('click', startEditing);
-    tr.querySelector('.delete-btn').addEventListener('click', deleteRow);
-  }
-
-  addClientForm.reset();
-});
-
-// Añadir trabajador
-const addWorkerForm = document.getElementById('add-worker-form');
-addWorkerForm.addEventListener('submit', e => {
-  e.preventDefault();
-  const nombre = document.getElementById('worker-nombre').value.trim();
-  const dni = document.getElementById('worker-dni').value.trim();
-  const telefono = document.getElementById('worker-telefono').value.trim();
-
-  if(!nombre || !dni || !telefono) return;
-
-  const tbody = document.getElementById('trabajadores-tbody');
-  const tr = document.createElement('tr');
-
-  tr.innerHTML = `
-    <td>${nombre}</td>
-    <td>${dni}</td>
-    <td>${telefono}</td>
-    <td class="edit-col"><button class="edit-btn">✏️</button></td>
-    <td class="delete-col"><button class="delete-btn">🗑️</button></td>
-  `;
-
-  tbody.appendChild(tr);
-
-  if(currentRole === 'admin') {
-    tr.querySelector('.edit-btn').addEventListener('click', startEditing);
-    tr.querySelector('.delete-btn').addEventListener('click', deleteRow);
-  }
-
-  addWorkerForm.reset();
-});
-
-function deleteRow(e) {
-  const btn = e.target;
-  const tr = btn.closest('tr');
-  const nombre = tr.cells[0].textContent;
-
-  if(confirm(`¿Seguro que quieres eliminar a ${nombre}?`)) {
-    tr.remove();
-  }
-}
-
-function updateDiasRestantes(tr) {
-  // Solo clientes tienen fecha límite (col 6)
-  const tbodyId = tr.parentElement.id;
-  if(tbodyId !== 'clientes-tbody') return;
-
-  const fechaLimiteText = tr.cells[6].textContent.trim();
-  if(!fechaLimiteText) {
-    tr.cells[7].textContent = '';
-    tr.classList.remove('plazo-rojo', 'plazo-amarillo');
+  if (!nombre) {
+    mostrarMensaje("Por favor, ingresa tu nombre.");
     return;
   }
 
-  const hoy = new Date();
-  const fechaLimite = new Date(fechaLimiteText + 'T23:59:59'); // Para considerar fin del día
-  const diffMs = fechaLimite - hoy;
-  const diffDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  if (contraseña === "cash2025") {
+    // Admin
+    localStorage.setItem("rol", "admin");
+    localStorage.setItem("nombreUsuario", nombre);
+    window.location.href = "admin.html";
+  } else if (contraseña === "exitos2025") {
+    // Trabajador
+    localStorage.setItem("rol", "trabajador");
+    localStorage.setItem("nombreUsuario", nombre);
+    window.location.href = "trabajador.html";
+  } else {
+    mostrarMensaje("Contraseña incorrecta.");
+  }
+});
 
-  tr.cells[7].textContent = diffDias >= 0 ? diffDias : 0;
-
-  // Quitar clases
-  tr.classList.remove('plazo-rojo', 'plazo-amarillo');
-
-  if(diffDias <= 4 && diffDias >= 0) {
-    tr.classList.add('plazo-rojo');
-  } else if(diffDias <= 7 && diffDias > 4) {
-    tr.classList.add('plazo-amarillo');
+function mostrarMensaje(msg) {
+  const mensaje = document.getElementById("loginMessage");
+  if(mensaje){
+    mensaje.textContent = msg;
+    mensaje.style.color = "red";
   }
 }
 
-function updateDiasRestantesAll() {
-  const clientesRows = document.querySelectorAll('#clientes-tbody tr');
-  clientesRows.forEach(tr => {
-    updateDiasRestantes(tr);
+// --- Cerrar sesión ---
+document.getElementById("btnCerrarSesion")?.addEventListener("click", () => {
+  localStorage.clear();
+  window.location.href = "index.html";
+});
+
+// --- Mostrar bienvenida ---
+function mostrarBienvenida() {
+  const rol = localStorage.getItem("rol");
+  const nombre = localStorage.getItem("nombreUsuario");
+
+  if (!rol || !nombre) {
+    window.location.href = "index.html";
+    return;
+  }
+
+  const bienvenidaDiv = document.getElementById("bienvenida");
+  if (bienvenidaDiv) {
+    const textoRol = rol === "admin" ? "Administrador" : "Trabajador";
+    bienvenidaDiv.textContent = `Bienvenido ${textoRol} ${nombre}`;
+  }
+}
+
+// --- Tabs ---
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+
+    btn.classList.add("active");
+    const target = btn.dataset.target;
+    document.getElementById(target).classList.add("active");
+  });
+});
+
+// --- Render clientes ---
+function renderClientes(esAdmin) {
+  // Ordenar clientes por nombre A-Z
+  clientes.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+
+  const tbody = document.querySelector(esAdmin ? "#clientesTableAdmin tbody" : "#clientesTableTrabajador tbody");
+  tbody.innerHTML = "";
+
+  const hoy = new Date();
+
+  clientes.forEach((cli, i) => {
+    // Evaluar días restantes a fechaPago
+    let colorClase = "";
+    if (cli.fechaPago) {
+      const partes = cli.fechaPago.split("/");
+      if (partes.length === 3) {
+        const fechaPago = new Date(`${partes[2]}-${partes[1]}}-${partes[0]}T00:00:00`);
+        const diffTime = fechaPago - hoy;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays <= 4) {
+          colorClase = "fila-alerta-roja";
+        } else if (diffDays <= 7) {
+          colorClase = "fila-alerta-amarilla";
+        }
+      }
+    }
+
+    const tr = document.createElement("tr");
+    if (colorClase) tr.classList.add(colorClase);
+
+    tr.innerHTML = `
+      <td>${cli.dni}</td>
+      <td>${cli.nombre}</td>
+      <td>${cli.lugar}</td>
+      <td>${cli.telefono}</td>
+      <td>${cli.montoTotal}</td>
+      <td>${cli.saldo}</td>
+      <td>${cli.tipo}</td>
+      <td>${cli.dt}</td>
+      <td>${cli.cp}</td>
+      <td>${cli.deudaVencida}</td>
+      <td>${cli.cuota}</td>
+      <td>${cli.fechaPago}</td>
+      ${esAdmin ? `
+      <td>
+        <button class="action-btn edit-btn" onclick="editarCliente(${i})">Editar</button>
+        <button class="action-btn delete-btn" onclick="eliminarCliente(${i})">Eliminar</button>
+      </td>
+      ` : ""}
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  actualizarResumen();
+}
+
+// --- Render trabajadores ---
+function renderTrabajadores(esAdmin) {
+  // Ordenar trabajadores por nombre A-Z
+  trabajadores.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+
+  const tbody = document.querySelector("#trabajadoresTableAdmin tbody");
+  tbody.innerHTML = "";
+
+  trabajadores.forEach((trab, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${trab.nombre}</td>
+      <td>${trab.dni}</td>
+      <td>${trab.telefono}</td>
+      ${esAdmin ? `
+      <td>
+        <button class="action-btn edit-btn" onclick="editarTrabajador(${i})">Editar</button>
+        <button class="action-btn delete-btn" onclick="eliminarTrabajador(${i})">Eliminar</button>
+      </td>
+      ` : ""}
+    `;
+    tbody.appendChild(tr);
   });
 }
 
-// Actualizar días restantes y resaltar cada minuto para que sea automático mientras la app esté abierta
-setInterval(() => {
-  if(mainContent.style.display !== 'none') {
-    updateDiasRestantesAll();
-  }
-}, 60000); // cada 60 segundos
+// --- Actualizar resumen ---
+function actualizarResumen() {
+  const hoy = new Date();
+  let totalCreditos = clientes.length;
+  let creditosVigentes = 0;
+  let creditosVencidos = 0;
+  let deudaTotal = 0;
 
-// Inicializa la pestaña activa
-document.addEventListener('DOMContentLoaded', () => {
-  buttons[0].click();
-});
+  clientes.forEach(cli => {
+    deudaTotal += cli.saldo;
+
+    if (cli.fechaPago) {
+      const partes = cli.fechaPago.split("/");
+      if (partes.length === 3) {
+        const fechaPago = new Date(`${partes[2]}-${partes[1]}-${partes[0]}T00:00:00`);
+        if (fechaPago >= hoy) {
+          creditosVigentes++;
+        } else {
+          creditosVencidos++;
+        }
+      }
+    }
+  });
+
+  // Actualizar en DOM según rol
+  const rol = localStorage.getItem("rol");
+  if (rol === "admin") {
+    document.getElementById("totalCreditos").textContent = totalCreditos;
+    document.getElementById("creditosVigentes").textContent = creditosVigentes;
+    document.getElementById("creditosVencidos").textContent = creditosVencidos;
+    document.getElementById("deudaTotal").textContent = deudaTotal;
+  } else {
+    document.getElementById("totalCreditosTrabajador").textContent = totalCreditos;
+    document.getElementById("creditosVigentesTrabajador").textContent = creditosVigentes;
+    document.getElementById("creditosVencidosTrabajador").textContent = creditosVencidos;
+    document.getElementById("deudaTotalTrabajador").textContent = deudaTotal;
+  }
+}
+
+// --- Filtrar clientes ---
+function filtrarClientes(valor, esAdmin) {
+  valor = valor.toLowerCase();
+  const tabla = esAdmin ? document.getElementById("clientesTableAdmin") : document.getElementById("clientesTableTrabajador");
+  const filas = tabla.tBodies[0].rows;
+
+  for (let fila of filas) {
+    const dni = fila.cells[0].textContent.toLowerCase();
+    const nombre = fila.cells[1].textContent.toLowerCase();
+    if (dni.includes(valor) || nombre.includes(valor)) {
+      fila.style.display = "";
+    } else {
+      fila.style.display = "none";
+    }
+  }
+}
+
+// --- Filtrar trabajadores ---
+function filtrarTrabajadores(valor, esAdmin) {
+  valor = valor.toLowerCase();
+  const tabla = document.getElementById("trabajadoresTableAdmin");
+  const filas = tabla.tBodies[0].rows;
+
+  for (let fila of filas) {
+    const dni = fila.cells[1].textContent.toLowerCase();
+    const nombre = fila.cells[0].textContent.toLowerCase();
+    if (dni.includes(valor) || nombre.includes(valor)) {
+      fila.style.display = "";
+    } else {
+      fila.style.display = "none";
+    }
+  }
+}
+
+// --- Añadir cliente ---
+function agregarCliente() {
+  const nuevo = {
+    dni: prompt("DNI:") || "",
+    nombre: prompt("Nombre:") || "",
+    lugar: prompt("Lugar donde reside:") || "",
+    telefono: prompt("Teléfono:") || "",
+    montoTotal: Number(prompt("Monto Total:") || 0),
+    saldo: Number(prompt("Saldo:") || 0),
+    tipo: prompt("Tipo (DT o CP):") || "",
+    dt: prompt("DT:") || "",
+    cp: prompt("CP:") || "",
+    deudaVencida: Number(prompt("Deuda Vencida:") || 0),
+    cuota: Number(prompt("Cuota:") || 0),
+    fechaPago: prompt("Fecha de Pago (dd/mm/aaaa):") || "",
+  };
+
+  if (!nuevo.dni || !nuevo.nombre) {
+    alert("DNI y Nombre son obligatorios.");
+    return;
+  }
+
+  clientes.push(nuevo);
+  renderClientes(true);
+}
+
+// --- Añadir trabajador ---
+function agregarTrabajador() {
+  const nuevo = {
+    nombre: prompt("Nombre:") || "",
+    dni: prompt("DNI:") || "",
+    telefono: prompt("Teléfono:") || "",
+  };
+
+  if (!nuevo.nombre || !nuevo.dni) {
+    alert("Nombre y DNI son obligatorios.");
+    return;
+  }
+
+  trabajadores.push(nuevo);
+  renderTrabajadores(true);
+}
+
+// --- Editar cliente ---
+function editarCliente(index) {
+  const cli = clientes[index];
+  const dni = prompt("DNI:", cli.dni) || cli.dni;
+  const nombre = prompt("Nombre:", cli.nombre) || cli.nombre;
+  const lugar = prompt("Lugar donde reside:", cli.lugar) || cli.lugar;
+  const telefono = prompt("Teléfono:", cli.telefono) || cli.telefono;
+  const montoTotal = Number(prompt("Monto Total:", cli.montoTotal) || cli.montoTotal);
+  const saldo = Number(prompt("Saldo:", cli.saldo) || cli.saldo);
+  const tipo = prompt("Tipo (DT o CP):", cli.tipo) || cli.tipo;
+  const dt = prompt("DT:", cli.dt) || cli.dt;
+  const cp = prompt("CP:", cli.cp) || cli.cp;
+  const deudaVencida = Number(prompt("Deuda Vencida:", cli.deudaVencida) || cli.deudaVencida);
+  const cuota = Number(prompt("Cuota:", cli.cuota) || cli.cuota);
+  const fechaPago = prompt("Fecha de Pago (dd/mm/aaaa):", cli.fechaPago) || cli.fechaPago;
+
+  clientes[index] = {dni, nombre, lugar, telefono, montoTotal, saldo, tipo, dt, cp, deudaVencida, cuota, fechaPago};
+  renderClientes(true);
+}
+
+// --- Editar trabajador ---
+function editarTrabajador(index) {
+  const trab = trabajadores[index];
+  const nombre = prompt("Nombre:", trab.nombre) || trab.nombre;
+  const dni = prompt("DNI:", trab.dni) || trab.dni;
+  const telefono = prompt("Teléfono:", trab.telefono) || trab.telefono;
+
+  trabajadores[index] = {nombre, dni, telefono};
+  renderTrabajadores(true);
+}
+
+// --- Eliminar cliente ---
+function eliminarCliente(index) {
+  if (confirm("¿Eliminar cliente?")) {
+    clientes.splice(index, 1);
+    renderClientes(true);
+  }
+}
+
+// --- Eliminar trabajador ---
+function eliminarTrabajador(index) {
+  if (confirm("¿Eliminar trabajador?")) {
+    trabajadores.splice(index, 1);
+    renderTrabajadores(true);
+  }
+}
+
+// --- Exportar a Excel (simple CSV) ---
+function exportarClientesExcel(esAdmin) {
+  const tabla = esAdmin ? document.getElementById("clientesTableAdmin") : document.getElementById("clientesTableTrabajador");
+  let csv = [];
+
+  for (let fila of tabla.rows) {
+    let cols = [];
+    for (let celda of fila.cells) {
+      // No exportar columna de acciones
+      if (celda.innerText.trim() === "Acciones") continue;
+      if (celda.querySelector("button")) continue;
+      cols.push(`"${celda.innerText.replace(/"/g, '""')}"`);
+    }
+    if(cols.length) csv.push(cols.join(","));
+  }
+
+  const csvContent = csv.join("\n");
+  const blob = new Blob([csvContent], {type: "text/csv;charset=utf-8;"});
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = esAdmin ? "clientes_admin.csv" : "clientes_trabajador.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// --- Inicialización páginas ---
+window.onload = function() {
+  const rol = localStorage.getItem("rol");
+
+  if (window.location.pathname.endsWith("admin.html")) {
+    if (rol !== "admin") {
+      alert("Acceso denegado.");
+      window.location.href = "index.html";
+      return;
+    }
+    mostrarBienvenida();
+    renderClientes(true);
+    renderTrabajadores(true);
+  } else if (window.location.pathname.endsWith("trabajador.html")) {
+    if (rol !== "trabajador") {
+      alert("Acceso denegado.");
+      window.location.href = "index.html";
+      return;
+    }
+    mostrarBienvenida();
+    renderClientes(false);
+  }
+};

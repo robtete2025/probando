@@ -1,34 +1,43 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel Trabajador - EmprendeCash</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Panel Trabajador</title>
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <header>
-        <h1>Panel Trabajador - EmprendeCash</h1>
-        <button onclick="logout()">Cerrar sesión</button>
-    </header>
+  <header>
+    <h1>Panel Trabajador</h1>
+    <div id="bienvenida"></div>
+    <button id="btnCerrarSesion">Cerrar Sesión</button>
+  </header>
 
-    <section class="table-section">
-        <h2>Lista de Clientes</h2>
-        <table id="tablaClientes">
-            <thead>
-                <tr>
-                    <th>Nombre</th>
-                    <th>DNI</th>
-                    <th>Lugar</th>
-                    <th>Teléfono</th>
-                    <th>Monto</th>
-                    <th>Cuota</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-    </section>
+  <section id="resumen" class="resumen">
+    <h2>Resumen de Créditos</h2>
+    <div class="resumen-grid">
+      <div>Total de Créditos: <span id="totalCreditosTrabajador">0</span></div>
+      <div>Créditos Vigentes: <span id="creditosVigentesTrabajador">0</span></div>
+      <div>Créditos Vencidos: <span id="creditosVencidosTrabajador">0</span></div>
+      <div>Deuda Total: <span id="deudaTotalTrabajador">0</span></div>
+    </div>
+  </section>
 
-    <script src="script.js"></script>
+  <section id="clientesTabTrabajador">
+    <div class="toolbar">
+      <input type="text" id="buscarClienteTrabajador" placeholder="Buscar cliente (DNI o nombre)" oninput="filtrarClientes(this.value, false)" />
+      <button onclick="exportarClientesExcel(false)">Exportar Excel</button>
+    </div>
+    <table id="clientesTableTrabajador">
+      <thead>
+        <tr>
+          <th>DNI</th><th>Nombre</th><th>Lugar</th><th>Teléfono</th><th>Monto Total</th><th>Saldo</th><th>Tipo</th><th>DT</th><th>CP</th><th>Deuda Vencida</th><th>Cuota</th><th>Fecha de Pago</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <script src="script.js"></script>
 </body>
 </html>

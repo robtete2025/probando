@@ -1,45 +1,64 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Panel Administrador - EmprendeCash</title>
-  <link rel="stylesheet" href="css/styles.css">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Panel Administrador</title>
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
-    <h1>Panel de Administrador</h1>
-    <nav>
-      <a href="index.html">Inicio</a>
-      <a href="trabajador.html">Vista de Trabajador</a>
-    </nav>
+    <h1>Panel Administrador</h1>
+    <div id="bienvenida"></div>
+    <button id="btnCerrarSesion">Cerrar Sesión</button>
   </header>
 
-  <main>
-    <h2>Lista de Clientes</h2>
-    <table id="tabla-clientes">
+  <section id="resumen" class="resumen">
+    <h2>Resumen de Créditos</h2>
+    <div class="resumen-grid">
+      <div>Total de Créditos: <span id="totalCreditos">0</span></div>
+      <div>Créditos Vigentes: <span id="creditosVigentes">0</span></div>
+      <div>Créditos Vencidos: <span id="creditosVencidos">0</span></div>
+      <div>Deuda Total: <span id="deudaTotal">0</span></div>
+    </div>
+  </section>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-target="clientesTab">Clientes</button>
+    <button class="tab-btn" data-target="trabajadoresTab">Trabajadores</button>
+  </nav>
+
+  <section id="clientesTab" class="tab-content active">
+    <div class="toolbar">
+      <button onclick="agregarCliente()">Añadir Cliente</button>
+      <input type="text" id="buscarClienteAdmin" placeholder="Buscar cliente (DNI o nombre)" oninput="filtrarClientes(this.value, true)" />
+      <button onclick="exportarClientesExcel(true)">Exportar Excel</button>
+    </div>
+    <table id="clientesTableAdmin">
       <thead>
         <tr>
-          <th>Nombre</th>
-          <th>DNI</th>
-          <th>Teléfono</th>
-          <th>Acciones</th>
+          <th>DNI</th><th>Nombre</th><th>Lugar</th><th>Teléfono</th><th>Monto Total</th><th>Saldo</th><th>Tipo</th><th>DT</th><th>CP</th><th>Deuda Vencida</th><th>Cuota</th><th>Fecha de Pago</th><th>Acciones</th>
         </tr>
       </thead>
-      <tbody>
-        <!-- Filas generadas por JS -->
-      </tbody>
+      <tbody></tbody>
     </table>
+  </section>
 
-    <h2>Registrar Cliente</h2>
-    <form id="form-cliente">
-      <input type="text" placeholder="Nombre" id="nombre" required>
-      <input type="text" placeholder="DNI" id="dni" required>
-      <input type="text" placeholder="Teléfono" id="telefono" required>
-      <button type="submit">Agregar Cliente</button>
-    </form>
-  </main>
+  <section id="trabajadoresTab" class="tab-content">
+    <div class="toolbar">
+      <button onclick="agregarTrabajador()">Añadir Trabajador</button>
+      <input type="text" id="buscarTrabajadorAdmin" placeholder="Buscar trabajador (DNI o nombre)" oninput="filtrarTrabajadores(this.value, true)" />
+    </div>
+    <table id="trabajadoresTableAdmin">
+      <thead>
+        <tr>
+          <th>Nombre</th><th>DNI</th><th>Teléfono</th><th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
 
-  <script src="js/script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

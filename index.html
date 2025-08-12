@@ -3,131 +3,20 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Listas Clientes y Trabajadores - Tema Claro Elegante</title>
+<title>Login</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
-<h1>Gestión de Clientes y Trabajadores</h1>
-
-<div id="login-section" class="login-section">
-  <h2>Iniciar Sesión</h2>
-  <label for="password">Contraseña:</label>
-  <input type="password" id="password" placeholder="Ingrese su contraseña" />
-  <button id="login-btn">Ingresar</button>
-  <p id="login-error" class="error" style="display:none;">Contraseña incorrecta.</p>
-</div>
-
-<div id="main-content" style="display:none;">
-
-  <div class="tabs">
-
-    <div class="tab-buttons">
-      <button class="active" data-tab="clientes">Clientes</button>
-      <button data-tab="trabajadores">Trabajadores</button>
-      <button id="logout-btn" style="margin-left:auto; background:#e74c3c; color:#fff; border:none; cursor:pointer; font-weight:600; padding:10px 15px; border-radius:5px;">Cerrar sesión</button>
-    </div>
-
-    <div class="search-container">
-      <input type="text" id="search-input" placeholder="Buscar..." />
-    </div>
-
-    <div id="form-clientes" class="add-form" style="display:none; margin: 20px 30px 10px;">
-      <h3>Añadir Cliente</h3>
-      <form id="add-client-form">
-        <input type="text" id="cli-nombre" placeholder="Nombre" required />
-        <input type="text" id="cli-telefono" placeholder="Teléfono" required />
-        <input type="text" id="cli-dni" placeholder="DNI" required />
-        <input type="text" id="cli-lugar" placeholder="Lugar" required />
-        <input type="text" id="cli-cuota" placeholder="Cuota" required />
-        <input type="text" id="cli-monto" placeholder="Monto" required />
-        <label for="cli-fecha">Fecha límite de pago:</label>
-        <input type="date" id="cli-fecha" required />
-        <button type="submit">Agregar Cliente</button>
-      </form>
-    </div>
-
-    <div id="form-trabajadores" class="add-form" style="display:none; margin: 20px 30px 10px;">
-      <h3>Añadir Trabajador</h3>
-      <form id="add-worker-form">
-        <input type="text" id="worker-nombre" placeholder="Nombre" required />
-        <input type="text" id="worker-dni" placeholder="DNI" required />
-        <input type="text" id="worker-telefono" placeholder="Teléfono" required />
-        <button type="submit">Agregar Trabajador</button>
-      </form>
-    </div>
-
-    <div id="clientes" class="tab-content">
-      <table>
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>Teléfono</th>
-            <th>DNI</th>
-            <th>Lugar</th>
-            <th>Cuota</th>
-            <th>Monto</th>
-            <th>Fecha límite de pago</th>
-            <th>Días restantes</th>
-            <th class="edit-col">Editar</th>
-            <th class="delete-col">Eliminar</th>
-          </tr>
-        </thead>
-        <tbody id="clientes-tbody">
-          <tr>
-            <td>Ana Pérez</td><td>987654321</td><td>12345678</td><td>Lima</td><td>Mensual</td><td>S/ 150</td><td>2025-08-20</td><td></td>
-            <td class="edit-col"><button class="edit-btn">✏️</button></td>
-            <td class="delete-col"><button class="delete-btn">🗑️</button></td>
-          </tr>
-          <tr>
-            <td>Carlos Díaz</td><td>912345678</td><td>87654321</td><td>Arequipa</td><td>Anual</td><td>S/ 1800</td><td>2025-08-10</td><td></td>
-            <td class="edit-col"><button class="edit-btn">✏️</button></td>
-            <td class="delete-col"><button class="delete-btn">🗑️</button></td>
-          </tr>
-          <tr>
-            <td>María López</td><td>987123456</td><td>11223344</td><td>Cusco</td><td>Mensual</td><td>S/ 150</td><td>2025-08-14</td><td></td>
-            <td class="edit-col"><button class="edit-btn">✏️</button></td>
-            <td class="delete-col"><button class="delete-btn">🗑️</button></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div id="trabajadores" class="tab-content" style="display:none;">
-      <table>
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>DNI</th>
-            <th>Teléfono</th>
-            <th class="edit-col">Editar</th>
-            <th class="delete-col">Eliminar</th>
-          </tr>
-        </thead>
-        <tbody id="trabajadores-tbody">
-          <tr>
-            <td>Jorge Alvarado</td><td>55667788</td><td>945678123</td>
-            <td class="edit-col"><button class="edit-btn">✏️</button></td>
-            <td class="delete-col"><button class="delete-btn">🗑️</button></td>
-          </tr>
-          <tr>
-            <td>Lucía Gómez</td><td>99887766</td><td>912345987</td>
-            <td class="edit-col"><button class="edit-btn">✏️</button></td>
-            <td class="delete-col"><button class="delete-btn">🗑️</button></td>
-          </tr>
-          <tr>
-            <td>Pedro Martínez</td><td>44556677</td><td>987654123</td>
-            <td class="edit-col"><button class="edit-btn">✏️</button></td>
-            <td class="delete-col"><button class="delete-btn">🗑️</button></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
+  <div class="login-container">
+    <h2>Iniciar Sesión</h2>
+    <form id="loginForm">
+      <input type="text" id="username" placeholder="Nombre" required />
+      <input type="password" id="password" placeholder="Contraseña" required />
+      <button type="submit">Entrar</button>
+    </form>
+    <p id="loginMessage" class="login-message"></p>
   </div>
-</div>
 
-<script src="script.js"></script>
-
+  <script src="script.js"></script>
 </body>
 </html>
