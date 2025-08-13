@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="login-container">
+        <h2>Iniciar Sesión</h2>
+        <form id="loginForm">
+            <input type="text" id="username" placeholder="Nombre" required />
+            <input type="password" id="password" placeholder="Contraseña" required />
+            <button type="submit">Entrar</button>
+        </form>
+        <p id="loginMessage" class="login-message"></p>
+    </div>
+
+    <script>
+        (async () => {
+            try {
+                const res = await fetch('/auth/check', { credentials: 'include' });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.rol === 'admin') {
+                        window.location.href = '/admin';
+                    } else if (data.rol === 'trabajador') {
+                        window.location.href = '/trabajador';
+                    }
+                }
+            } catch (e) {
+                console.error('Error verificando sesión:', e);
+            }
+        })();
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+
+            try {
+                const res = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
+                    body: JSON.stringify({username, password})
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.msg || 'Credenciales inválidas');
+                    return;
+                }
+
+                localStorage.setItem('rol', data.rol);
+                if (data.rol === 'admin') {
+                    window.location.href = '/admin';
+                } else {
+                    window.location.href = '/trabajador';
+                }
+
+            } catch (err) {
+                console.error(err);
+                alert('Error conectando al servidor');
+            }
+        });
+    </script>
+</body>
+</html>

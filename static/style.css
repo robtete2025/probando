@@ -230,3 +230,126 @@ th, td {
   background-color: #ff9a9a !important;
   color: #333 !important;
 }
+
+/* MODAL TABLA TRABAJADORES*/
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 100;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.4);
+    overflow: auto;
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 15% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 500px;
+    border-radius: 8px;
+    position: relative;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    color: #333;
+}
+
+.modal-content h2 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #000;
+}
+
+.modal-content label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #555;
+}
+
+.modal-content input {
+    width: calc(100% - 20px);
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    color: #333;
+}
+
+.modal-content button {
+    width: 100%;
+    padding: 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.modal-content button:hover {
+    background-color: #0056b3;
+}
+
+.close-btn {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    position: absolute;
+    top: 10px;
+    right: 15px;
+}
+
+.close-btn:hover,
+.close-btn:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* Contenedor para el input y el botón */
+.password-container {
+    position: relative;
+    margin-bottom: 15px;
+}
+
+.password-container input {
+    width: 100%;
+    padding-right: 40px; /* Espacio para el icono */
+    box-sizing: border-box; /* Asegura que el padding no cambie el ancho */
+}
+
+/* Botón de alternar visibilidad */
+#togglePassword {
+    position: absolute;
+    right: 5px;
+    top: 35%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    width: 20px;  /* <-- Nueva línea: Limita el ancho del botón */
+    height: 20px; /* <-- Nueva línea: Limita la altura del botón */
+    z-index: 10; /* <-- Nueva línea: Asegura que el botón esté por encima del input */
+}
+
+#togglePassword img {
+    width: 20px; /* Reducido a un tamaño más compacto */
+    height: 20px;
+    opacity: 0.5; /* Opcional: hace que el icono se vea más tenue */
+    pointer-events: none;
+}
+
+#togglePassword:hover img {
+    opacity: 1;
+}
+
+/* Opcional: elimina el margen de la etiqueta para una mejor alineación */
+.modal-content label {
+    margin-bottom: 5px;
+}
