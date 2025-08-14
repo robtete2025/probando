@@ -102,6 +102,7 @@ async function cargarClientesAdmin() {
                             <button class="action-btn" onclick="abrirPrestamoModal(${cliente.id})"><i class="fas fa-plus"></i></button>
                             <button class="action-btn" onclick="abrirEditClienteModal(${cliente.id}, '${cliente.nombre}', '${cliente.direccion}', '${cliente.telefono}')"><i class="fas fa-edit"></i></button>
                             <button class="action-btn delete-btn" onclick="eliminarCliente(${cliente.id})"><i class="fas fa-trash-alt"></i></button>
+                            <button class="action-btn" onclick="marcarPrestamoComoPagado(${prestamo.id})"><i class="fas fa-check"></i></button>
                         </td>
                     `;
                     tBody.appendChild(tr);
@@ -119,6 +120,7 @@ async function cargarClientesAdmin() {
                         <button class="action-btn" onclick="abrirPrestamoModal(${cliente.id})"><i class="fas fa-plus"></i></button>
                         <button class="action-btn" onclick="abrirEditClienteModal(${cliente.id}, '${cliente.nombre}', '${cliente.direccion}', '${cliente.telefono}')"><i class="fas fa-edit"></i></button>
                         <button class="action-btn delete-btn" onclick="eliminarCliente(${cliente.id})"><i class="fas fa-trash-alt"></i></button>
+                        <button class="action-btn" onclick="marcarPrestamoComoPagado(${prestamo.id})"><i class="fas fa-check"></i></button>
                     </td>
                 `;
                 tBody.appendChild(tr);
@@ -254,6 +256,24 @@ async function eliminarCliente(id) {
     }
 }
 
+// Agrega esta nueva función en cualquier parte de tu script.js
+// MARCAR PRESTAMO COMO PAGADO
+window.marcarPrestamoComoPagado = async function(prestamoId) {
+    if (!confirm('¿Estás seguro de que deseas marcar este préstamo como pagado?')) {
+        return;
+    }
+
+    const { res, data } = await fetchJSON(`/api/prestamos/${prestamoId}/pagado_manual`, 'PUT');
+
+    if (res.ok) {
+        alert(data.msg || 'Préstamo marcado como pagado exitosamente.');
+        await cargarClientesAdmin();
+        await cargarResumenCreditos();
+    } else {
+        alert(data.msg || 'Error al marcar el préstamo como pagado.');
+    }
+}
+
 // Función para cambiar la visibilidad de la contraseña
 function togglePasswordVisibility() {
     const passwordInput = document.getElementById('passwordInput');
@@ -344,6 +364,57 @@ function cerrarPrestamoModal() {
     document.getElementById('prestamoForm').reset();
 }
 
+// AÑADIDO: Cargar el historial completo (o vacío al inicio)
+async function cargarHistorial() {
+    const tBody = document.querySelector('#prestamosTableAdmin tbody');
+    if (!tBody) return;
+    tBody.innerHTML = '<tr><td colspan="7">Busca un cliente para ver su historial.</td></tr>';
+}
+
+// NUEVA FUNCIÓN: Buscar historial de pagos
+async function buscarHistorial(searchText) {
+    const tBody = document.querySelector('#prestamosTableAdmin tbody');
+    if (!tBody) return;
+    tBody.innerHTML = ''; // Limpiar la tabla antes de la búsqueda
+
+    if (searchText.length < 3) { // Buscar solo si hay al menos 3 caracteres
+        tBody.innerHTML = '<tr><td colspan="7">Ingresa al menos 3 caracteres para buscar.</td></tr>';
+        return;
+    }
+
+    try {
+        const { res, data } = await fetchJSON(`/api/historial/search?q=${encodeURIComponent(searchText)}`);
+        if (!res.ok) {
+            console.error('Error al buscar historial:', data?.msg || res.statusText);
+            tBody.innerHTML = '<tr><td colspan="7">Error al cargar el historial.</td></tr>';
+            return;
+        }
+
+        if (data.length === 0) {
+            tBody.innerHTML = '<tr><td colspan="7">No se encontraron préstamos para ese cliente.</td></tr>';
+            return;
+        }
+
+        data.forEach(prestamo => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${prestamo.cliente_nombre || ''}</td>
+                <td>${prestamo.cliente_dni || 'N/A'}</td>
+                <td>${(prestamo.monto || 0).toFixed(2)}</td>
+                <td>${(prestamo.interes || 0).toFixed(2)}%</td>
+                <td>${prestamo.tipo || 'N/A'}</td>
+                <td>${prestamo.fecha_inicio || 'N/A'}</td>
+                <td>${prestamo.estado || 'N/A'}</td>
+            `;
+            tBody.appendChild(tr);
+        });
+
+    } catch (error) {
+        console.error('Error en la búsqueda del historial:', error);
+        tBody.innerHTML = '<tr><td colspan="7">Error de conexión al servidor.</td></tr>';
+    }
+}
+
 // ** Funciones de filtrado y exportación **
 function filtrarClientes(searchText) {
     const table = document.getElementById('clientesTableAdmin');
@@ -367,6 +438,38 @@ function filtrarClientes(searchText) {
     }
 }
 
+// Función para cargar y mostrar el historial de préstamos en el modal
+async function mostrarHistorialModal(clienteId) {
+    const historialModal = document.getElementById('historialModal');
+    const tablaBody = historialModal.querySelector('#historialPrestamosTable tbody');
+    tablaBody.innerHTML = '<tr><td colspan="7" style="text-align: center;">Cargando historial...</td></tr>';
+
+    const { res, data } = await fetchJSON(`/api/prestamos/historial/${clienteId}`);
+
+    if (res.ok && data.length > 0) {
+        tablaBody.innerHTML = ''; // Limpiar el mensaje de carga
+        data.forEach(prestamo => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${prestamo.id}</td>
+                <td>$${prestamo.monto.toFixed(2)}</td>
+                <td>${prestamo.interes.toFixed(2)}%</td>
+                <td>${prestamo.tipo}</td>
+                <td>${prestamo.cuota}</td>
+                <td>${prestamo.fecha_inicio}</td>
+                <td>${prestamo.estado}</td>
+            `;
+            tablaBody.appendChild(tr);
+        });
+    } else {
+        tablaBody.innerHTML = `<tr><td colspan="7" style="text-align: center;">No se encontraron préstamos para este cliente.</td></tr>`;
+    }
+    historialModal.style.display = 'block';
+}
+
+
+
+
 function exportarClientesExcel() {
     let table = document.getElementById('clientesTableAdmin');
     let html = table.outerHTML;
@@ -378,6 +481,104 @@ function exportarClientesExcel() {
     a.click();
     document.body.removeChild(a);
 }
+
+ // ---- LÓGICA PARA LA NUEVA PESTAÑA DE HISTORIAL DE PAGOS ----
+    
+    // Función para mostrar clientes en la tabla del historial
+    function mostrarClientesHistorial(clientes) {
+        const tablaHistorial = document.getElementById('historialClientesTableBody');
+        if (!tablaHistorial) {
+            console.error('El elemento historialClientesTableBody no se encontró.');
+            return;
+        }
+        
+        tablaHistorial.innerHTML = '';
+        document.getElementById('clienteSeleccionadoInfo').style.display = 'none';
+
+        if (clientes.length === 0) {
+            const fila = document.createElement('tr');
+            fila.innerHTML = `<td colspan="3" style="text-align: center;">No se encontraron clientes.</td>`;
+            tablaHistorial.appendChild(fila);
+            return;
+        }
+
+        clientes.forEach(cliente => {
+            const fila = document.createElement('tr');
+            fila.innerHTML = `
+                <td>${cliente.nombre}</td>
+                <td>${cliente.dni}</td>
+                <td>
+                    <button class="btn-primary ver-historial-btn" data-cliente-id="${cliente.id}" data-cliente-nombre="${cliente.nombre}">Ver Historial</button>
+                </td>
+            `;
+            tablaHistorial.appendChild(fila);
+        });
+    }
+
+    // Función para mostrar el historial de préstamos de un cliente
+    function mostrarHistorialPagos(prestamos) {
+        const tablaHistorial = document.getElementById('prestamosClienteHistorialTableBody');
+        if (!tablaHistorial) return;
+
+        tablaHistorial.innerHTML = '';
+
+        if (prestamos.length === 0) {
+            const fila = document.createElement('tr');
+            fila.innerHTML = `<td colspan="5" style="text-align: center;">Este cliente no tiene préstamos registrados.</td>`;
+            tablaHistorial.appendChild(fila);
+            return;
+        }
+
+        prestamos.forEach(prestamo => {
+            const fila = document.createElement('tr');
+            fila.innerHTML = `
+                <td>$${prestamo.monto.toFixed(2)}</td>
+                <td>${prestamo.interes}%</td>
+                <td>${prestamo.tipo}</td>
+                <td>${prestamo.fecha_inicio}</td>
+                <td>${prestamo.estado}</td>
+            `;
+            tablaHistorial.appendChild(fila);
+        });
+    }
+    
+
+    
+    // Event listener para el input de búsqueda en el historial
+    const searchHistorialInput = document.getElementById('searchHistorialInput');
+    if (searchHistorialInput) {
+        searchHistorialInput.addEventListener('input', async (e) => {
+            const searchText = e.target.value;
+            if (searchText.length > 0) {
+                const { res, data } = await fetchJSON(`/api/clientes/search?q=${encodeURIComponent(searchText)}`);
+                if (res.ok) {
+                    mostrarClientesHistorial(data);
+                } else {
+                    console.error('Error en la búsqueda de clientes para historial:', data);
+                    mostrarClientesHistorial([]);
+                }
+            } else {
+                mostrarClientesHistorial([]); // Limpia la tabla si el input está vacío
+            }
+        });
+    }
+
+    // Event listener para los botones "Ver Historial"
+    document.addEventListener('click', async (e) => {
+        if (e.target.classList.contains('ver-historial-btn')) {
+            const clienteId = e.target.dataset.clienteId;
+            const clienteNombre = e.target.dataset.clienteNombre;
+            const { res, data } = await fetchJSON(`/api/prestamos/historial/${clienteId}`);
+            if (res.ok) {
+                document.getElementById('clienteNombreHistorial').textContent = clienteNombre;
+                document.getElementById('clienteSeleccionadoInfo').style.display = 'block';
+                mostrarHistorialPagos(data);
+            } else {
+                console.error('Error al cargar historial de pagos:', data);
+                showModal(data.msg || 'Error al cargar el historial de pagos.');
+            }
+        }
+    });
 
 // --- Event listeners principales ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -511,6 +712,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             alert(data.msg || 'Error al crear el préstamo.');
         }
     });
+
+
+
 
     // Event listener para el botón de cerrar sesión
     const btnCerrarSesion = document.getElementById('btnCerrarSesion');

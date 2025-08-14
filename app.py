@@ -7,7 +7,7 @@ from flask_jwt_extended import (
 )
 from datetime import timedelta, datetime, timezone
 import os
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
@@ -255,6 +255,14 @@ def crear_cliente_con_prestamo():
         return jsonify({'msg': 'Error al crear el cliente y el préstamo', 'error': str(e)}), 500
 
 
+# --- Endpoints de administración (requieren rol 'admin') ---
+# Función auxiliar para verificar si el usuario es administrador
+def es_admin():
+    claims = get_jwt()
+    if claims.get('rol') != 'admin':
+        return False, jsonify({"msg": "Acceso denegado: Se requiere rol de administrador"}), 403
+    return True, None, None
+
 @app.route('/api/clientes', methods=['GET'])
 @jwt_required()
 def api_clientes():
@@ -287,6 +295,71 @@ def api_clientes():
 
     return jsonify(clientes_con_prestamos_activos), 200
 
+@app.route('/api/clientes/search', methods=['GET'])
+@jwt_required()
+def api_search_clientes():
+    """
+    Busca clientes por nombre o DNI y devuelve TODOS sus préstamos.
+    """
+    search_term = request.args.get('q', '').strip()
+    if not search_term:
+        return jsonify([]), 200
+    
+    # Realiza la búsqueda en la base de datos
+    clientes_encontrados = Cliente.query.filter(or_(
+        Cliente.nombre.ilike(f'%{search_term}%'),
+        Cliente.dni.ilike(f'%{search_term}%')
+    )).all()
+
+    resultados_busqueda = []
+    for cliente in clientes_encontrados:
+        # Ahora se obtienen TODOS los préstamos del cliente encontrado, sin filtrar por estado.
+        prestamos_del_cliente = cliente.prestamos
+        cliente_data = {
+            'id': cliente.id,
+            'nombre': cliente.nombre,
+            'dni': cliente.dni,
+            'direccion': cliente.direccion,
+            'telefono': cliente.telefono,
+            'fecha_registro': cliente.fecha_registro.isoformat() if cliente.fecha_registro else None,
+            'prestamos': [p.to_dict() for p in prestamos_del_cliente]
+        }
+        resultados_busqueda.append(cliente_data)
+
+    return jsonify(resultados_busqueda), 200
+
+# NUEVA RUTA: Buscar préstamos por cliente
+@app.route('/api/historial/search', methods=['GET'])
+@jwt_required()
+def api_search_historial():
+    """Busca clientes por nombre o DNI y devuelve TODOS sus préstamos."""
+    claims = get_jwt()
+    if claims.get('rol') not in ['admin', 'trabajador']:
+        return jsonify({'msg': 'No autorizado'}), 403
+
+    search_term = request.args.get('q', '').strip()
+    if not search_term:
+        return jsonify([]), 200
+
+    # Busca clientes que coincidan con el término en nombre o DNI
+    clientes = Cliente.query.filter(
+        or_(
+            Cliente.nombre.ilike(f'%{search_term}%'),
+            Cliente.dni.ilike(f'%{search_term}%')
+        )
+    ).all()
+
+    # Recopila todos los préstamos de los clientes encontrados
+    prestamos_encontrados = []
+    for cliente in clientes:
+        for prestamo in cliente.prestamos:
+            prestamos_encontrados.append({
+                'cliente_nombre': cliente.nombre,
+                'cliente_dni': cliente.dni,
+                **prestamo.to_dict()
+            })
+
+    return jsonify(prestamos_encontrados), 200
 
 @app.route('/api/clientes/<int:id>', methods=['PUT'])
 @jwt_required()
@@ -411,6 +484,52 @@ def api_pagar_prestamo(prestamo_id):
         db.session.rollback()
         return jsonify({'msg': 'Error al registrar el pago', 'error': str(e)}), 500
 
+
+# ---- RUTA PARA MARCAR PRÉSTAMO PAGADO MANUALMENTE ----
+@app.route('/api/prestamos/<int:prestamo_id>/pagado_manual', methods=['PUT'])
+@jwt_required()
+def marcar_prestamo_pagado(prestamo_id):
+    """
+    Ruta para marcar manualmente un préstamo como 'pagado'.
+    Requiere el rol de 'admin' para su ejecución.
+    También reinicia el saldo y la deuda vencida a 0.0.
+    """
+    try:
+        claims = get_jwt()
+        if claims.get('rol') != 'admin':
+            return jsonify({'msg': 'No autorizado'}), 403
+
+        prestamo = Prestamo.query.get(prestamo_id)
+        if not prestamo:
+            return jsonify({'msg': 'Préstamo no encontrado'}), 404
+
+        # Actualiza el estado del préstamo
+        prestamo.estado = 'pagado'
+        # Asegura que el saldo y la deuda vencida sean 0
+        prestamo.saldo = 0.0
+        prestamo.deuda_vencida = 0.0
+        db.session.commit()
+
+        return jsonify({'msg': 'Préstamo marcado como pagado exitosamente'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'msg': 'Error al marcar el préstamo como pagado', 'error': str(e)}), 500
+
+
+# Endpoint para obtener préstamos pagados
+@app.route('/api/prestamos/pagados')
+@jwt_required()
+def get_prestamos_pagados():
+    prestamos_pagados = db.session.query(Prestamo).filter(Prestamo.estado == 'pagado').all()
+    prestamos_pagados_data = []
+    for p in prestamos_pagados:
+        cliente = Cliente.query.get(p.cliente_id)
+        prestamos_pagados_data.append({
+            **p.to_dict(),
+            'nombre_cliente': cliente.nombre if cliente else 'N/A'
+        })
+    return jsonify(prestamos_pagados_data)
 
 @app.route('/api/trabajadores', methods=['GET'])
 @jwt_required()
