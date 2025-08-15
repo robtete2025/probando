@@ -27,7 +27,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Configuración de JWT en cookies (entorno de desarrollo)
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'prestamo123')
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=3)
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=30)  # Aumentado a 30 min
 app.config['JWT_TOKEN_LOCATION'] = ['cookies']
 app.config['JWT_COOKIE_SECURE'] = False
 app.config['JWT_COOKIE_SAMESITE'] = 'Lax'
@@ -82,11 +82,12 @@ class Prestamo(db.Model):
     fecha_fin = db.Column(db.Date)
     estado = db.Column(db.String(50), nullable=False, server_default='activo')
 
-    saldo = db.Column(db.Numeric(10, 2), default=0.0)
-    tipo = db.Column(db.String(50), nullable=True)
-    dt = db.Column(db.Integer, default=0)
-    cuota = db.Column(db.Numeric(10, 2), default=0.0)
-    deuda_vencida = db.Column(db.Numeric(10, 2), default=0.0)
+    # Campos adicionales para control del préstamo
+    saldo = db.Column(db.Numeric(10, 2), default=0.0)  # Saldo pendiente de pago
+    tipo = db.Column(db.String(50), nullable=True)  # Diario, Semanal, Quincenal, Mensual
+    dt = db.Column(db.Integer, default=0)  # Días transcurridos
+    cuota = db.Column(db.Numeric(10, 2), default=0.0)  # Cuota de pago
+    deuda_vencida = db.Column(db.Numeric(10, 2), default=0.0)  # Deuda fuera de plazo
 
     pagos = db.relationship('Pago', backref=db.backref('prestamo', lazy=True))
 
@@ -163,7 +164,8 @@ def logout():
 @app.after_request
 def refresh_expiring_jwts(response):
     """
-    Refresca el token JWT si está a punto de expirar.
+    Refresca automáticamente el token JWT si está próximo a expirar.
+    Verifica si el token expirará en los próximos 5 minutos y genera uno nuevo.
     """
     try:
         exp_timestamp = get_jwt()["exp"]
@@ -180,7 +182,33 @@ def refresh_expiring_jwts(response):
         return response
 
 
-# ---------------- API (usa cookies -> jwt_required funciona) ----------------
+# ---------------- FUNCIONES AUXILIARES ----------------
+def calcular_fecha_fin(fecha_inicio, tipo_prestamo):
+    """
+    Calcula la fecha de vencimiento del préstamo basado en su tipo.
+    
+    Args:
+        fecha_inicio (date): Fecha de inicio del préstamo
+        tipo_prestamo (str): Tipo de préstamo (Diario, Semanal, Quincenal, Mensual)
+    
+    Returns:
+        tuple: (fecha_fin, dias_tramo)
+    """
+    if tipo_prestamo == 'Diario':
+        dias_tramo = 1
+    elif tipo_prestamo == 'Semanal':
+        dias_tramo = 7
+    elif tipo_prestamo == 'Quincenal':
+        dias_tramo = 15
+    else:  # Mensual
+        dias_tramo = 30
+    
+    fecha_fin = fecha_inicio + timedelta(days=dias_tramo)
+    return fecha_fin, dias_tramo
+
+
+# ---------------- API ENDPOINTS ----------------
+
 @app.route('/api/clientes_con_prestamo', methods=['POST'])
 @jwt_required()
 def crear_cliente_con_prestamo():
@@ -212,19 +240,10 @@ def crear_cliente_con_prestamo():
 
     try:
         fecha_inicio = datetime.fromisoformat(fecha_inicio_str).date()
-
-        # Calcular DT y fecha_fin
         tipo_prestamo = prestamo_data.get('tipo', 'Diario')
-        if tipo_prestamo == 'Diario':
-            dias_tramo = 1
-        elif tipo_prestamo == 'Semanal':
-            dias_tramo = 7
-        elif tipo_prestamo == 'Quincenal':
-            dias_tramo = 15
-        else:  # Mensual
-            dias_tramo = 30
-
-        fecha_fin = fecha_inicio + timedelta(days=dias_tramo)
+        
+        # Calcular fecha de vencimiento usando función auxiliar
+        fecha_fin, dias_tramo = calcular_fecha_fin(fecha_inicio, tipo_prestamo)
 
         nuevo_cliente = Cliente(
             nombre=nombre,
@@ -233,7 +252,7 @@ def crear_cliente_con_prestamo():
             direccion=direccion
         )
         db.session.add(nuevo_cliente)
-        db.session.flush()  # Para obtener el ID del cliente antes de hacer commit
+        db.session.flush()  # Para obtener el ID del cliente
 
         nuevo_prestamo = Prestamo(
             cliente_id=nuevo_cliente.id,
@@ -255,33 +274,20 @@ def crear_cliente_con_prestamo():
         return jsonify({'msg': 'Error al crear el cliente y el préstamo', 'error': str(e)}), 500
 
 
-# --- Endpoints de administración (requieren rol 'admin') ---
-# Función auxiliar para verificar si el usuario es administrador
-def es_admin():
-    claims = get_jwt()
-    if claims.get('rol') != 'admin':
-        return False, jsonify({"msg": "Acceso denegado: Se requiere rol de administrador"}), 403
-    return True, None, None
-
 @app.route('/api/clientes', methods=['GET'])
 @jwt_required()
 def api_clientes():
     """
     Obtiene los clientes que tienen al menos un préstamo activo.
     """
-    # Obtener todos los clientes de la base de datos
     clientes_bd = Cliente.query.all()
-
     clientes_con_prestamos_activos = []
 
     for cliente in clientes_bd:
-        # Filtramos los préstamos de cada cliente para encontrar solo los activos
-        # El campo 'estado' de la tabla Prestamo es el que usamos para el filtro
+        # Filtrar solo préstamos activos
         prestamos_activos = [p for p in cliente.prestamos if p.estado == 'activo']
 
-        # Si el cliente tiene al menos un préstamo activo, lo incluimos en la lista de respuesta
         if prestamos_activos:
-            # Creamos un diccionario para el cliente con solo sus préstamos activos
             cliente_data = {
                 'id': cliente.id,
                 'nombre': cliente.nombre,
@@ -289,11 +295,12 @@ def api_clientes():
                 'direccion': cliente.direccion,
                 'telefono': cliente.telefono,
                 'fecha_registro': cliente.fecha_registro.isoformat() if cliente.fecha_registro else None,
-                'prestamos': [p.to_dict() for p in prestamos_activos] # Solo se incluyen los préstamos activos
+                'prestamos': [p.to_dict() for p in prestamos_activos]
             }
             clientes_con_prestamos_activos.append(cliente_data)
 
     return jsonify(clientes_con_prestamos_activos), 200
+
 
 @app.route('/api/clientes/search', methods=['GET'])
 @jwt_required()
@@ -305,7 +312,6 @@ def api_search_clientes():
     if not search_term:
         return jsonify([]), 200
     
-    # Realiza la búsqueda en la base de datos
     clientes_encontrados = Cliente.query.filter(or_(
         Cliente.nombre.ilike(f'%{search_term}%'),
         Cliente.dni.ilike(f'%{search_term}%')
@@ -313,8 +319,6 @@ def api_search_clientes():
 
     resultados_busqueda = []
     for cliente in clientes_encontrados:
-        # Ahora se obtienen TODOS los préstamos del cliente encontrado, sin filtrar por estado.
-        prestamos_del_cliente = cliente.prestamos
         cliente_data = {
             'id': cliente.id,
             'nombre': cliente.nombre,
@@ -322,44 +326,26 @@ def api_search_clientes():
             'direccion': cliente.direccion,
             'telefono': cliente.telefono,
             'fecha_registro': cliente.fecha_registro.isoformat() if cliente.fecha_registro else None,
-            'prestamos': [p.to_dict() for p in prestamos_del_cliente]
+            'prestamos': [p.to_dict() for p in cliente.prestamos]
         }
         resultados_busqueda.append(cliente_data)
 
     return jsonify(resultados_busqueda), 200
 
-# NUEVA RUTA: Buscar préstamos por cliente
-@app.route('/api/historial/search', methods=['GET'])
+
+@app.route('/api/prestamos/historial/<int:cliente_id>', methods=['GET'])
 @jwt_required()
-def api_search_historial():
-    """Busca clientes por nombre o DNI y devuelve TODOS sus préstamos."""
+def api_historial_prestamos(cliente_id):
+    """Obtiene el historial completo de préstamos de un cliente específico."""
     claims = get_jwt()
     if claims.get('rol') not in ['admin', 'trabajador']:
         return jsonify({'msg': 'No autorizado'}), 403
 
-    search_term = request.args.get('q', '').strip()
-    if not search_term:
-        return jsonify([]), 200
+    cliente = Cliente.query.get_or_404(cliente_id)
+    prestamos = Prestamo.query.filter_by(cliente_id=cliente_id).all()
+    
+    return jsonify([p.to_dict() for p in prestamos]), 200
 
-    # Busca clientes que coincidan con el término en nombre o DNI
-    clientes = Cliente.query.filter(
-        or_(
-            Cliente.nombre.ilike(f'%{search_term}%'),
-            Cliente.dni.ilike(f'%{search_term}%')
-        )
-    ).all()
-
-    # Recopila todos los préstamos de los clientes encontrados
-    prestamos_encontrados = []
-    for cliente in clientes:
-        for prestamo in cliente.prestamos:
-            prestamos_encontrados.append({
-                'cliente_nombre': cliente.nombre,
-                'cliente_dni': cliente.dni,
-                **prestamo.to_dict()
-            })
-
-    return jsonify(prestamos_encontrados), 200
 
 @app.route('/api/clientes/<int:id>', methods=['PUT'])
 @jwt_required()
@@ -368,30 +354,43 @@ def api_update_cliente(id):
     claims = get_jwt()
     if claims.get('rol') != 'admin':
         return jsonify({'msg': 'No autorizado'}), 403
+    
     cliente = Cliente.query.get_or_404(id)
     data = request.get_json() or {}
+    
     cliente.nombre = data.get('nombre', cliente.nombre)
     cliente.direccion = data.get('direccion', cliente.direccion)
     cliente.telefono = data.get('telefono', cliente.telefono)
+    
     db.session.commit()
     return jsonify(cliente.to_dict()), 200
+
 
 @app.route('/api/clientes/<int:cliente_id>', methods=['DELETE'])
 @jwt_required()
 def eliminar_cliente(cliente_id):
-    # Lógica para encontrar y eliminar el cliente
+    """Elimina un cliente y todos sus préstamos asociados."""
+    claims = get_jwt()
+    if claims.get('rol') != 'admin':
+        return jsonify({'msg': 'No autorizado'}), 403
+
     cliente = Cliente.query.get(cliente_id)
     if not cliente:
         return jsonify({'msg': 'Cliente no encontrado'}), 404
 
-    prestamos_del_cliente = Prestamo.query.filter_by(cliente_id=cliente_id).all()
-    for prestamo in prestamos_del_cliente:
-        db.session.delete(prestamo)
+    try:
+        # Eliminar pagos asociados a los préstamos del cliente
+        prestamos_del_cliente = Prestamo.query.filter_by(cliente_id=cliente_id).all()
+        for prestamo in prestamos_del_cliente:
+            Pago.query.filter_by(prestamo_id=prestamo.id).delete()
+            db.session.delete(prestamo)
 
-    db.session.delete(cliente)
-    db.session.commit()
-
-    return jsonify({'msg': 'Cliente eliminado correctamente'}), 200
+        db.session.delete(cliente)
+        db.session.commit()
+        return jsonify({'msg': 'Cliente eliminado correctamente'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'msg': 'Error al eliminar cliente', 'error': str(e)}), 500
 
 
 @app.route('/api/prestamos', methods=['POST'])
@@ -401,38 +400,46 @@ def api_create_prestamo():
     claims = get_jwt()
     if claims.get('rol') != 'admin':
         return jsonify({'msg': 'No autorizado'}), 403
+    
     data = request.get_json() or {}
     required = ['cliente_id', 'monto', 'interes', 'fecha_inicio']
     if not all(k in data for k in required):
         return jsonify({'msg': 'faltan campos'}), 400
+    
     cliente = Cliente.query.get(data['cliente_id'])
     if not cliente:
         return jsonify({'msg': 'cliente no existe'}), 404
 
-    fecha_inicio = datetime.fromisoformat(data['fecha_inicio']).date()
-    fecha_fin = datetime.fromisoformat(data['fecha_fin']).date() if data.get('fecha_fin') else None
+    try:
+        fecha_inicio = datetime.fromisoformat(data['fecha_inicio']).date()
+        tipo_prestamo = data.get('tipo', 'Diario')
+        fecha_fin, dias_tramo = calcular_fecha_fin(fecha_inicio, tipo_prestamo)
 
-    p = Prestamo(
-        cliente_id=data['cliente_id'],
-        monto=data['monto'],
-        interes=data['interes'],
-        fecha_inicio=fecha_inicio,
-        fecha_fin=fecha_fin,
-        estado=data.get('estado', 'activo'),
-        saldo=data.get('monto'),
-        tipo=data.get('tipo'),
-        cuota=data.get('cuota')
-    )
-    db.session.add(p)
-    db.session.commit()
-    return jsonify(p.to_dict()), 201
+        p = Prestamo(
+            cliente_id=data['cliente_id'],
+            monto=data['monto'],
+            interes=data['interes'],
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            estado=data.get('estado', 'activo'),
+            saldo=data.get('monto'),
+            tipo=tipo_prestamo,
+            cuota=data.get('cuota'),
+            dt=dias_tramo
+        )
+        db.session.add(p)
+        db.session.commit()
+        return jsonify(p.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'msg': 'Error al crear préstamo', 'error': str(e)}), 500
 
 
 @app.route('/api/prestamos/<int:prestamo_id>/pagar', methods=['POST'])
 @jwt_required()
 def api_pagar_prestamo(prestamo_id):
     """
-    Ruta para registrar un pago de un préstamo.
+    Registra un pago para un préstamo específico.
     Permitido para roles 'admin' y 'trabajador'.
     """
     claims = get_jwt()
@@ -458,7 +465,7 @@ def api_pagar_prestamo(prestamo_id):
             monto_real_pago = monto_pago
             prestamo.saldo -= monto_real_pago
 
-        # Actualizar la deuda vencida (si existe)
+        # Actualizar la deuda vencida si existe
         if prestamo.deuda_vencida > 0:
             if prestamo.deuda_vencida > monto_real_pago:
                 prestamo.deuda_vencida -= monto_real_pago
@@ -485,14 +492,12 @@ def api_pagar_prestamo(prestamo_id):
         return jsonify({'msg': 'Error al registrar el pago', 'error': str(e)}), 500
 
 
-# ---- RUTA PARA MARCAR PRÉSTAMO PAGADO MANUALMENTE ----
 @app.route('/api/prestamos/<int:prestamo_id>/pagado_manual', methods=['PUT'])
 @jwt_required()
 def marcar_prestamo_pagado(prestamo_id):
     """
-    Ruta para marcar manualmente un préstamo como 'pagado'.
-    Requiere el rol de 'admin' para su ejecución.
-    También reinicia el saldo y la deuda vencida a 0.0.
+    Marca manualmente un préstamo como 'pagado' (solo para administradores).
+    Reinicia el saldo y la deuda vencida a 0.0.
     """
     try:
         claims = get_jwt()
@@ -503,9 +508,7 @@ def marcar_prestamo_pagado(prestamo_id):
         if not prestamo:
             return jsonify({'msg': 'Préstamo no encontrado'}), 404
 
-        # Actualiza el estado del préstamo
         prestamo.estado = 'pagado'
-        # Asegura que el saldo y la deuda vencida sean 0
         prestamo.saldo = 0.0
         prestamo.deuda_vencida = 0.0
         db.session.commit()
@@ -517,24 +520,10 @@ def marcar_prestamo_pagado(prestamo_id):
         return jsonify({'msg': 'Error al marcar el préstamo como pagado', 'error': str(e)}), 500
 
 
-# Endpoint para obtener préstamos pagados
-@app.route('/api/prestamos/pagados')
-@jwt_required()
-def get_prestamos_pagados():
-    prestamos_pagados = db.session.query(Prestamo).filter(Prestamo.estado == 'pagado').all()
-    prestamos_pagados_data = []
-    for p in prestamos_pagados:
-        cliente = Cliente.query.get(p.cliente_id)
-        prestamos_pagados_data.append({
-            **p.to_dict(),
-            'nombre_cliente': cliente.nombre if cliente else 'N/A'
-        })
-    return jsonify(prestamos_pagados_data)
-
 @app.route('/api/trabajadores', methods=['GET'])
 @jwt_required()
 def api_trabajadores():
-    """Obtiene la lista de todos los trabajadores."""
+    """Obtiene la lista de todos los trabajadores (solo para administradores)."""
     claims = get_jwt()
     if claims.get('rol') != 'admin':
         return jsonify({'msg': 'No autorizado'}), 403
@@ -575,8 +564,13 @@ def api_crear_trabajador():
     db.session.add(trabajador)
     db.session.commit()
 
-    return jsonify({'id': trabajador.id, 'username': trabajador.username, 'rol': trabajador.rol, 'dni': trabajador.dni,
-                    'telefono': trabajador.telefono}), 201
+    return jsonify({
+        'id': trabajador.id, 
+        'username': trabajador.username, 
+        'rol': trabajador.rol, 
+        'dni': trabajador.dni,
+        'telefono': trabajador.telefono
+    }), 201
 
 
 @app.route('/api/trabajadores/<int:id>', methods=['PUT'])
@@ -627,7 +621,7 @@ def api_eliminar_trabajador(id):
 @jwt_required()
 def resumen_creditos():
     """
-    Proporciona un resumen de los créditos.
+    Proporciona un resumen estadístico de los créditos.
     """
     total_creditos = Prestamo.query.count()
     creditos_activos = Prestamo.query.filter_by(estado='activo').count()
@@ -636,7 +630,7 @@ def resumen_creditos():
         Prestamo.fecha_fin < datetime.now().date()
     ).count()
 
-    deuda_total = db.session.query(func.sum(Prestamo.saldo)).scalar()
+    deuda_total = db.session.query(func.sum(Prestamo.saldo)).filter_by(estado='activo').scalar()
     if deuda_total is None:
         deuda_total = 0.0
 
@@ -651,7 +645,7 @@ def resumen_creditos():
 # ---------------- PÁGINAS HTML ----------------
 @app.route('/')
 def login_page():
-    """Ruta de la página de inicio de sesión, redirige si ya está autenticado."""
+    """Página de inicio de sesión, redirige si ya está autenticado."""
     try:
         verify_jwt_in_request(optional=True)
         claims = get_jwt()

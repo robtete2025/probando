@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Panel Administrador</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 
 <body>
@@ -22,7 +23,7 @@
             <div>Total de Créditos: <span id="totalCreditos">0</span></div>
             <div>Créditos Vigentes: <span id="creditosVigentes">0</span></div>
             <div>Créditos Vencidos: <span id="creditosVencidos">0</span></div>
-            <div>Deuda Total: <span id="deudaTotal">0</span></div>
+            <div>Deuda Total: <span id="deudaTotal">S/ 0.00</span></div>
         </div>
     </section>
 
@@ -32,59 +33,74 @@
         <button class="tab-btn" data-target="historialTab">Historial de Pagos</button>
     </nav>
 
+    <!-- PESTAÑA DE CLIENTES -->
     <section id="clientesTab" class="tab-content active">
         <div class="toolbar">
-            <button onclick="abrirClienteModal()">Añadir Cliente</button>
-            <input type="text" id="buscarClienteAdmin" placeholder="Buscar cliente (DNI o nombre)" oninput="filtrarClientes(this.value, true)" />
-            <button onclick="exportarClientesExcel(true)">Exportar Excel</button>
+            <button onclick="abrirClienteModal()">
+                <i class="fas fa-user-plus"></i> Añadir Cliente
+            </button>
+            <input type="text" id="buscarClienteAdmin" placeholder="Buscar cliente (DNI o nombre)" oninput="filtrarClientes(this.value)" />
+            <button onclick="exportarClientesExcel()">
+                <i class="fas fa-file-excel"></i> Exportar Excel
+            </button>
         </div>
-        <table id="clientesTableAdmin">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>DNI</th>
-                    <th>Nombre</th>
-                    <th>Lugar</th>
-                    <th>Teléfono</th>
-                    <th>Monto Total</th>
-                    <th>Saldo</th>
-                    <th>Tipo</th>
-                    <th>DT</th>
-                    <th>CP</th>
-                    <th>Deuda Vencida</th>
-                    <th>Cuota</th>
-                    <th>Fecha de Pago</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div class="table-container">
+            <table id="clientesTableAdmin">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>DNI</th>
+                        <th>Nombre</th>
+                        <th>Dirección</th>
+                        <th>Teléfono</th>
+                        <th>Monto Total</th>
+                        <th>Saldo</th>
+                        <th>Tipo</th>
+                        <th>DT</th>
+                        <th>Pagos</th>
+                        <th>Deuda Vencida</th>
+                        <th>Cuota</th>
+                        <th>Fecha Fin</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Datos se cargan dinámicamente -->
+                </tbody>
+            </table>
+        </div>
     </section>
 
-     <!-- TAB PARA VER TRABAJADORES-->
+    <!-- PESTAÑA DE TRABAJADORES -->
     <section id="trabajadoresTab" class="tab-content">
         <div class="toolbar">
-            <button onclick="agregarTrabajador()">Añadir Trabajador</button>
-            <input type="text" id="buscarTrabajadorAdmin" placeholder="Buscar trabajador (DNI o nombre)" oninput="filtrarTrabajadores(this.value)" />
+            <button onclick="agregarTrabajador()">
+                <i class="fas fa-user-tie"></i> Añadir Trabajador
+            </button>
+            <input type="text" id="buscarTrabajadorAdmin" placeholder="Buscar trabajador (usuario o DNI)" oninput="filtrarTrabajadores(this.value)" />
         </div>
-        <table id="trabajadoresTableAdmin">
-            <thead>
-                <tr>
-                    <th>Nombre de Usuario</th>
-                    <th>DNI</th>
-                    <th>Teléfono</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div class="table-container">
+            <table id="trabajadoresTableAdmin">
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>DNI</th>
+                        <th>Teléfono</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Datos se cargan dinámicamente -->
+                </tbody>
+            </table>
+        </div>
     </section>
 
-    <!-- Nueva sección para el historial de pagos -->
+    <!-- PESTAÑA DE HISTORIAL DE PAGOS -->
     <section id="historialTab" class="tab-content">
         <h2>Historial de Pagos</h2>
         <div class="toolbar">
-            <input type="text" id="buscarTrabajadorAdmin" placeholder="Buscar historial de cliente (DNI o nombre)" oninput="buscarHistorial(this.value)" />
+            <input type="text" id="buscarHistorialInput" placeholder="Buscar historial por cliente (DNI o nombre)" oninput="buscarHistorial(this.value)" />
         </div>
         <div class="table-container">
             <table id="prestamosTableAdmin">
@@ -95,18 +111,18 @@
                         <th>Monto</th>
                         <th>Interés</th>
                         <th>Tipo</th>
-                        <th>Fecha de Inicio</th>
+                        <th>Fecha Inicio</th>
                         <th>Estado</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <!-- Filas de préstamos se insertarán aquí por JS -->
+                    <tr><td colspan="7" class="text-center">Busca un cliente para ver su historial.</td></tr>
                 </tbody>
             </table>
         </div>
     </section>
 
-     <!-- AGREGAR UN CLIENTE-->
+    <!-- MODAL: AGREGAR CLIENTE Y PRÉSTAMO INICIAL -->
     <div id="clienteModal" class="modal">
         <div class="modal-content">
             <span class="close-btn" onclick="cerrarClienteModal()">&times;</span>
@@ -114,88 +130,54 @@
             <form id="clienteForm">
 
                 <h3>Datos del Cliente</h3>
-                <label for="clienteNombreInput">Nombre completo:</label>
+                <label for="clienteNombreInput">Nombre completo *:</label>
                 <input type="text" id="clienteNombreInput" required />
 
-                <label for="clienteDniInput">DNI:</label>
+                <label for="clienteDniInput">DNI *:</label>
                 <input type="text" id="clienteDniInput" required />
 
-                <label for="clienteLugarInput">Lugar/Dirección:</label>
+                <label for="clienteLugarInput">Dirección:</label>
                 <input type="text" id="clienteLugarInput" />
 
                 <label for="clienteTelefonoInput">Teléfono:</label>
                 <input type="text" id="clienteTelefonoInput" />
 
-                <hr style="margin: 20px 0;">
-
                 <h3>Datos del Préstamo Inicial</h3>
-                <label for="prestamoMontoInput">Monto (S/):</label>
-                <input type="number" id="prestamoMontoInput" step="0.01" required />
+                <label for="prestamoMontoInput">Monto (S/) *:</label>
+                <input type="number" id="prestamoMontoInput" step="0.01" min="0" required />
 
-                <label for="prestamoInteresInput">Interés (%):</label>
-                <input type="number" id="prestamoInteresInput" step="0.01" required />
+                <label for="prestamoInteresInput">Interés (%) *:</label>
+                <input type="number" id="prestamoInteresInput" step="0.01" min="0" required />
 
-                <label for="prestamoTipoInput">Tipo de Préstamo:</label>
+                <label for="prestamoTipoInput">Tipo de Préstamo *:</label>
                 <select id="prestamoTipoInput" required>
+                    <option value="">Seleccione un tipo</option>
                     <option value="Diario">Diario</option>
                     <option value="Semanal">Semanal</option>
                     <option value="Quincenal">Quincenal</option>
                     <option value="Mensual">Mensual</option>
                 </select>
 
-                <label for="prestamoCuotaInput">Cuota (S/):</label>
-                <input type="number" id="prestamoCuotaInput" step="0.01" required />
+                <label for="prestamoCuotaInput">Cuota (S/) *:</label>
+                <input type="number" id="prestamoCuotaInput" step="0.01" min="0" required />
 
-                <label for="prestamoFechaInicioInput">Fecha de Inicio:</label>
+                <label for="prestamoFechaInicioInput">Fecha de Inicio *:</label>
                 <input type="date" id="prestamoFechaInicioInput" required />
 
-                <button type="submit" id="clienteSubmitBtn" style="margin-top: 20px;">Guardar</button>
+                <button type="submit" id="clienteSubmitBtn">Guardar Cliente y Préstamo</button>
             </form>
         </div>
     </div>
 
-      <!-- AGREGAR PRESTAMO A UN CLIENTE-->
-     <div id="prestamoModal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn" onclick="cerrarPrestamoModal()">&times;</span>
-            <h2>Añadir Nuevo Préstamo</h2>
-            <form id="prestamoForm">
-                <input type="hidden" id="prestamoClienteId" />
-
-                <h3>Datos del Nuevo Préstamo</h3>
-                <label for="prestamoMontoNuevo">Monto (S/):</label>
-                <input type="number" id="prestamoMontoNuevo" step="0.01" required />
-
-                <label for="prestamoInteresNuevo">Interés (%):</label>
-                <input type="number" id="prestamoInteresNuevo" step="0.01" required />
-
-                <label for="prestamoTipoNuevo">Tipo de Préstamo:</label>
-                <select id="prestamoTipoNuevo" required>
-                    <option value="Diario">Diario</option>
-                    <option value="Semanal">Semanal</option>
-                    <option value="Quincenal">Quincenal</option>
-                    <option value="Mensual">Mensual</option>
-                </select>
-
-                <label for="prestamoCuotaNuevo">Cuota (S/):</label>
-                <input type="number" id="prestamoCuotaNuevo" step="0.01" required />
-
-                <label for="prestamoFechaInicioNuevo">Fecha de Inicio:</label>
-                <input type="date" id="prestamoFechaInicioNuevo" required />
-
-                <button type="submit" style="margin-top: 20px;">Guardar Préstamo</button>
-            </form>
-        </div>
-    </div>
-
-     <div id="editClienteModal" class="modal">
+    <!-- MODAL: EDITAR CLIENTE -->
+    <div id="editClienteModal" class="modal">
         <div class="modal-content">
             <span class="close-btn" onclick="cerrarEditClienteModal()">&times;</span>
             <h2>Editar Cliente</h2>
             <form id="editClienteForm">
                 <input type="hidden" id="editClienteId" />
 
-                <label for="editClienteNombre">Nombre:</label>
+                <label for="editClienteNombre">Nombre *:</label>
                 <input type="text" id="editClienteNombre" required />
 
                 <label for="editClienteDireccion">Dirección:</label>
@@ -204,243 +186,93 @@
                 <label for="editClienteTelefono">Teléfono:</label>
                 <input type="text" id="editClienteTelefono" />
 
-                <button type="submit" style="margin-top: 20px;">Actualizar Cliente</button>
+                <button type="submit">Actualizar Cliente</button>
             </form>
         </div>
     </div>
 
-     <!-- AGREGAR UN TRABAJADOR-->
+    <!-- MODAL: AGREGAR NUEVO PRÉSTAMO -->
+    <div id="prestamoModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="cerrarPrestamoModal()">&times;</span>
+            <h2>Añadir Nuevo Préstamo</h2>
+            <form id="prestamoForm">
+                <input type="hidden" id="prestamoClienteId" />
+
+                <label for="prestamoMontoNuevo">Monto (S/) *:</label>
+                <input type="number" id="prestamoMontoNuevo" step="0.01" min="0" required />
+
+                <label for="prestamoInteresNuevo">Interés (%) *:</label>
+                <input type="number" id="prestamoInteresNuevo" step="0.01" min="0" required />
+
+                <label for="prestamoTipoNuevo">Tipo de Préstamo *:</label>
+                <select id="prestamoTipoNuevo" required>
+                    <option value="">Seleccione un tipo</option>
+                    <option value="Diario">Diario</option>
+                    <option value="Semanal">Semanal</option>
+                    <option value="Quincenal">Quincenal</option>
+                    <option value="Mensual">Mensual</option>
+                </select>
+
+                <label for="prestamoCuotaNuevo">Cuota (S/) *:</label>
+                <input type="number" id="prestamoCuotaNuevo" step="0.01" min="0" required />
+
+                <label for="prestamoFechaInicioNuevo">Fecha de Inicio *:</label>
+                <input type="date" id="prestamoFechaInicioNuevo" required />
+
+                <button type="submit">Guardar Préstamo</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: AGREGAR/EDITAR TRABAJADOR -->
     <div id="workerModal" class="modal">
         <div class="modal-content">
             <span class="close-btn" onclick="cerrarModal()">&times;</span>
             <h2 id="modalTitle">Añadir Trabajador</h2>
             <form id="workerForm">
                 <input type="hidden" id="workerId" />
-                <label for="usernameInput">Nombre de Usuario:</label>
+                
+                <label for="usernameInput">Usuario *:</label>
                 <input type="text" id="usernameInput" required />
+                
                 <label for="dniInput">DNI:</label>
                 <input type="text" id="dniInput" />
+                
                 <label for="telefonoInput">Teléfono:</label>
                 <input type="text" id="telefonoInput" />
-                <label for="passwordInput">Contraseña:</label>
+                
+                <label for="passwordInput">Contraseña *:</label>
                 <div class="password-container">
                     <input type="password" id="passwordInput" required />
                     <button type="button" id="togglePassword" onclick="togglePasswordVisibility()">
-                        <img id="passwordIcon" src="{{ url_for('static', filename='icons/eye-open.svg') }}" alt="Mostrar/Ocultar contraseña" width="20" height="20">
+                        <img id="passwordIcon" src="{{ url_for('static', filename='icons/eye-open.svg') }}" 
+                             alt="Mostrar contraseña" width="20" height="20">
                     </button>
                 </div>
+                
                 <button type="submit" id="submitBtn">Guardar</button>
             </form>
         </div>
     </div>
 
-    <!-- Modal para el historial de préstamos -->
-    <div id="historialModal" class="modal">
+    <!-- MODAL: REGISTRAR PAGO -->
+    <div id="pagoModal" class="modal">
         <div class="modal-content">
-            <span class="close-btn">&times;</span>
-            <h2>Historial de Préstamos de Cliente</h2>
-            <div class="table-container">
-                <table id="historialPrestamosTable">
-                    <thead>
-                        <tr>
-                            <th>ID Préstamo</th>
-                            <th>Monto</th>
-                            <th>Interés</th>
-                            <th>Tipo</th>
-                            <th>Cuota</th>
-                            <th>Fecha de Inicio</th>
-                            <th>Estado</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <!-- Historial de préstamos se carga aquí -->
-                    </tbody>
-                </table>
-            </div>
+            <span class="close-btn" onclick="cerrarModalPago()">&times;</span>
+            <h2>Registrar Pago</h2>
+            <form id="pagoForm">
+                <input type="hidden" id="pagoPrestamoId" />
+                
+                <label for="pagoMonto">Monto del Pago (S/) *:</label>
+                <input type="number" id="pagoMonto" step="0.01" min="0.01" required />
+                
+                <button type="submit">Registrar Pago</button>
+            </form>
         </div>
     </div>
 
-
-    <script>
-        document.addEventListener('DOMContentLoaded', async () => {
-            const rol = localStorage.getItem('rol');
-            if (!rol || rol !== 'admin') {
-                window.location.href = '/';
-                return;
-            }
-            const bienvenida = document.getElementById('bienvenida');
-            if (bienvenida) bienvenida.textContent = 'Bienvenido, ' + rol;
-
-            // Lógica para el cambio de pestañas
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
-
-                    this.classList.add('active');
-                    document.getElementById(this.dataset.target).classList.add('active');
-
-                    if (this.dataset.target === 'trabajadoresTab') {
-                        cargarTrabajadoresAdmin();
-                    }
-                    if (this.dataset.target === 'clientesTab') {
-                        cargarClientesAdmin();
-                    }
-                });
-            });
-
-            // Cargar la pestaña activa por defecto
-            cargarClientesAdmin();
-
-            // Manejar el envío del formulario modal
-            document.getElementById('workerForm').addEventListener('submit', async function(e) {
-                e.preventDefault();
-                const id = document.getElementById('workerId').value;
-                const username = document.getElementById('usernameInput').value;
-                const dni = document.getElementById('dniInput').value;
-                const telefono = document.getElementById('telefonoInput').value;
-                const password = document.getElementById('passwordInput').value;
-                const submitBtn = document.getElementById('submitBtn');
-
-                submitBtn.disabled = true;
-                submitBtn.innerText = 'Guardando...';
-
-                if (id) {
-                    // Lógica para editar
-                    const body = {
-                        username,
-                        dni,
-                        telefono
-                    };
-                    if (password) body.password = password;
-                    const {
-                        res,
-                        data
-                    } = await fetchJSON(`/api/trabajadores/${id}`, 'PUT', body);
-                    if (res.ok) {
-                        // Se ha eliminado la alerta de éxito aquí.
-                        // La actualización se procesa sin mostrar un mensaje emergente.
-                        cargarTrabajadoresAdmin();
-                    } else {
-                        alert(data.msg || 'Error al actualizar el trabajador.');
-                    }
-                } else {
-                    // Lógica para agregar
-                    const {
-                        res,
-                        data
-                    } = await fetchJSON('/api/trabajadores', 'POST', {
-                        username,
-                        password,
-                        dni,
-                        telefono
-                    });
-                    if (res.ok) {
-                        alert('Trabajador creado con éxito.');
-                        cargarTrabajadoresAdmin();
-                    } else {
-                        alert(data.msg || 'Error al crear el trabajador.');
-                    }
-                }
-                cerrarModal();
-                submitBtn.disabled = false;
-                submitBtn.innerText = 'Guardar';
-            });
-        });
-
-         <!-- EDITAR TRABAJADOR-->
-        function abrirModal(id = null, username = '', dni = '', telefono = '') {
-            document.getElementById('workerId').value = id || '';
-            document.getElementById('usernameInput').value = username;
-            document.getElementById('dniInput').value = dni;
-            document.getElementById('telefonoInput').value = telefono;
-
-            const modalTitle = document.getElementById('modalTitle');
-            const passwordInput = document.getElementById('passwordInput');
-            const submitBtn = document.getElementById('submitBtn');
-
-            if (id) {
-                modalTitle.innerText = 'Editar Trabajador';
-                passwordInput.required = false;
-                passwordInput.placeholder = 'Dejar en blanco para no cambiar';
-                submitBtn.innerText = 'Actualizar';
-            } else {
-                modalTitle.innerText = 'Añadir Trabajador';
-                passwordInput.required = true;
-                passwordInput.placeholder = '';
-                submitBtn.innerText = 'Guardar';
-            }
-
-            document.getElementById('workerModal').style.display = 'block';
-        }
-
-        function cerrarModal() {
-            document.getElementById('workerModal').style.display = 'none';
-            document.getElementById('workerForm').reset();
-            document.getElementById('passwordInput').required = true;
-            document.getElementById('passwordInput').placeholder = '';
-        }
-
-        function agregarTrabajador() {
-            abrirModal();
-        }
-
-        // Esta es la única función que muestra la alerta de confirmación
-        async function eliminarTrabajador(id) {
-            if (confirm('¿Estás seguro de que quieres eliminar este trabajador?')) {
-                const {
-                    res,
-                    data
-                } = await fetchJSON(`/api/trabajadores/${id}`, 'DELETE');
-                if (res.ok) {
-                    // No se muestra una alerta de éxito, solo se recarga la tabla
-                    cargarTrabajadoresAdmin();
-                } else {
-                    alert(data.msg || 'Error al eliminar el trabajador.');
-                }
-            }
-        }
-
-        // Función para mostrar/ocultar la contraseña con un icono
-        function togglePasswordVisibility() {
-            const passwordInput = document.getElementById('passwordInput');
-            const passwordIcon = document.getElementById('passwordIcon'); // Obtiene la imagen por su nuevo ID
-
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                passwordIcon.src = "{{ url_for('static', filename='icons/eye-close.svg') }}"; // Ruta al ícono de ojo tachado
-                passwordIcon.alt = 'Ocultar contraseña';
-            } else {
-                passwordInput.type = 'password';
-                passwordIcon.src = "{{ url_for('static', filename='icons/eye-open.svg') }}"; // Ruta al ícono de ojo
-                passwordIcon.alt = 'Mostrar contraseña';
-            }
-        }
-
-        // ---- ESTA ES LA FUNCIÓN FILTRARTRABAJADORES CORREGIDA ----
-        // Ahora está fuera de la función togglePasswordVisibility
-        function filtrarTrabajadores(searchText) {
-            const table = document.getElementById('trabajadoresTableAdmin');
-            const rows = table.getElementsByTagName('tr');
-            const filter = searchText.toLowerCase();
-
-            for (let i = 1; i < rows.length; i++) {
-                const username = rows[i].getElementsByTagName('td')[0];
-                const dni = rows[i].getElementsByTagName('td')[1];
-
-                if (username || dni) {
-                    const usernameText = username.textContent || username.innerText;
-                    const dniText = dni.textContent || dni.innerText;
-
-                    if (usernameText.toLowerCase().indexOf(filter) > -1 || dniText.toLowerCase().indexOf(filter) > -1) {
-                        rows[i].style.display = "";
-                    } else {
-                        rows[i].style.display = "none";
-                    }
-                }
-            }
-        }
-    </script>
+    <!-- Scripts -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 

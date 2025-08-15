@@ -1,11 +1,14 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Panel Trabajador</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
+
 <body>
     <header>
         <h1>Panel Trabajador</h1>
@@ -19,38 +22,66 @@
             <div>Total de Créditos: <span id="totalCreditosTrabajador">0</span></div>
             <div>Créditos Vigentes: <span id="creditosVigentesTrabajador">0</span></div>
             <div>Créditos Vencidos: <span id="creditosVencidosTrabajador">0</span></div>
-            <div>Deuda Total: <span id="deudaTotalTrabajador">0</span></div>
+            <div>Deuda Total: <span id="deudaTotalTrabajador">S/ 0.00</span></div>
         </div>
     </section>
 
     <section id="clientesTabTrabajador">
         <div class="toolbar">
-            <input type="text" id="buscarClienteTrabajador" placeholder="Buscar cliente (DNI o nombre)" oninput="filtrarClientes(this.value, false)" />
-            <button onclick="exportarClientesExcel(false)">Exportar Excel</button>
+            <input type="text" id="buscarClienteTrabajador" placeholder="Buscar cliente (DNI o nombre)" oninput="filtrarClientes(this.value)" />
+            <button onclick="exportarClientesExcel()">
+                <i class="fas fa-file-excel"></i> Exportar Excel
+            </button>
         </div>
-        <table id="clientesTableTrabajador">
-            <thead>
-                <tr>
-                    <th>ID</th><th>DNI</th><th>Nombre</th><th>Lugar</th><th>Teléfono</th><th>Monto Total</th><th>Saldo</th><th>Tipo</th><th>DT</th><th>CP</th><th>Deuda Vencida</th><th>Cuota</th><th>Fecha de Pago</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div class="table-container">
+            <table id="clientesTableTrabajador">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>DNI</th>
+                        <th>Nombre</th>
+                        <th>Dirección</th>
+                        <th>Teléfono</th>
+                        <th>Monto Total</th>
+                        <th>Saldo</th>
+                        <th>Tipo</th>
+                        <th>DT</th>
+                        <th>Pagos</th>
+                        <th>Deuda Vencida</th>
+                        <th>Cuota</th>
+                        <th>Fecha Fin</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Datos se cargan dinámicamente -->
+                </tbody>
+            </table>
+        </div>
     </section>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const rol = localStorage.getItem('rol');
-            if (!rol || (rol !== 'trabajador' && rol !== 'admin')) {
-                alert('Acceso no autorizado');
-                location.href = '/';
-                return;
-            }
-            const bienvenida = document.getElementById('bienvenida');
-            if (bienvenida) bienvenida.textContent = 'Bienvenido, ' + rol;
-            cargarClientesTrabajador();
-        });
-    </script>
+    <!-- MODAL: REGISTRAR PAGO (para trabajadores) -->
+    <div id="pagoModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="cerrarModalPago()">&times;</span>
+            <h2>Registrar Pago</h2>
+            <form id="pagoForm">
+                <input type="hidden" id="pagoPrestamoId" />
+                
+                <label for="pagoMonto">Monto del Pago (S/) *:</label>
+                <input type="number" id="pagoMonto" step="0.01" min="0.01" required />
+                
+                <p style="color: #666; font-size: 14px; margin: 10px 0;">
+                    <i class="fas fa-info-circle"></i>
+                    Los trabajadores pueden registrar pagos pero no crear o eliminar clientes.
+                </p>
+                
+                <button type="submit">Registrar Pago</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
+
 </html>
