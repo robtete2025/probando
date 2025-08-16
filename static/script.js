@@ -36,10 +36,6 @@ async function fetchJSON(url, method = 'GET', body = null) {
 }
 
 // ---- CONTROL DE INACTIVIDAD ----
-/**
- * Sistema de control de inactividad del usuario
- * Avisa antes de cerrar la sesión y la cierra automáticamente tras el límite
- */
 let inactivityTimer, warningTimer;
 
 function resetInactivityTimer() {
@@ -68,6 +64,35 @@ function resetInactivityTimer() {
     window.addEventListener(evt, resetInactivityTimer);
 });
 
+// ---- FUNCIONES UTILITARIAS ----
+
+/**
+ * Calcula el monto total incluyendo intereses
+ */
+function calcularMontoTotal(montoPrincipal, interes) {
+    const principal = parseFloat(montoPrincipal) || 0;
+    const porcentajeInteres = parseFloat(interes) || 0;
+    const montoInteres = principal * (porcentajeInteres / 100);
+    return principal + montoInteres;
+}
+
+/**
+ * Formatea números como moneda
+ */
+function formatearMoneda(monto) {
+    return `S/ ${parseFloat(monto || 0).toFixed(2)}`;
+}
+
+/**
+ * Calcula días entre dos fechas
+ */
+function calcularDiasEntreFechas(fechaInicio, fechaFin) {
+    const inicio = new Date(fechaInicio);
+    const fin = new Date(fechaFin);
+    const diferencia = fin.getTime() - inicio.getTime();
+    return Math.ceil(diferencia / (1000 * 60 * 60 * 24));
+}
+
 // ---- FUNCIONES PARA CARGAR DATOS ----
 
 /**
@@ -81,14 +106,14 @@ async function cargarClientesAdmin() {
         const { res, data } = await fetchJSON('/api/clientes');
         if (!res.ok) {
             console.error('Error al cargar clientes:', data?.msg || res.statusText);
-            tBody.innerHTML = '<tr><td colspan="14">Error al cargar clientes.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="16">Error al cargar clientes.</td></tr>';
             return;
         }
 
         tBody.innerHTML = '';
         
         if (data.length === 0) {
-            tBody.innerHTML = '<tr><td colspan="14" class="text-center">No hay clientes con préstamos activos.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="16" class="text-center">No hay clientes con préstamos activos.</td></tr>';
             return;
         }
 
@@ -115,6 +140,11 @@ async function cargarClientesAdmin() {
                         }
                     }
                     
+                    // Determinar icono de tipo de préstamo
+                    const iconoTipo = prestamo.tipo_prestamo === 'REF' ? 
+                        '<i class="fas fa-redo-alt" title="Refinanciación"></i>' : 
+                        '<i class="fas fa-plus-circle" title="Crédito Reciente"></i>';
+                    
                     tr.className = claseAlerta;
                     tr.innerHTML = `
                         <td>${cliente.id}</td>
@@ -122,30 +152,40 @@ async function cargarClientesAdmin() {
                         <td>${cliente.nombre || ''}</td>
                         <td>${cliente.direccion || ''}</td>
                         <td>${cliente.telefono || ''}</td>
-                        <td>S/ ${(prestamo.monto || 0).toFixed(2)}</td>
-                        <td>S/ ${(prestamo.saldo || 0).toFixed(2)}</td>
-                        <td>${prestamo.tipo || 'N/A'}</td>
-                        <td>${prestamo.dt || 0}</td>
-                        <td>${prestamo.pagos ? prestamo.pagos.length : 0}</td>
-                        <td>S/ ${(prestamo.deuda_vencida || 0).toFixed(2)}</td>
-                        <td>S/ ${(prestamo.cuota || 0).toFixed(2)}</td>
+                        <td>${formatearMoneda(prestamo.monto_principal)}</td>
+                        <td><strong>${formatearMoneda(prestamo.monto_total)}</strong></td>
+                        <td>${formatearMoneda(prestamo.saldo)}</td>
+                        <td>${iconoTipo} ${prestamo.tipo_prestamo}</td>
+                        <td>${prestamo.tipo_frecuencia || 'Diario'}</td>
+                        <td><span class="badge">${prestamo.dt || 0}</span></td>
+                        <td>${prestamo.total_cuotas || 0}</td>
+                        <td class="deuda-vencida">${formatearMoneda(prestamo.deuda_vencida)}</td>
+                        <td>${formatearMoneda(prestamo.cuota_diaria)}</td>
                         <td>${prestamo.fecha_fin || 'N/A'}</td>
-                        <td>
-                            <button class="action-btn" onclick="abrirPrestamoModal(${cliente.id})" title="Nuevo Préstamo">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                            <button class="action-btn" onclick="abrirEditClienteModal(${cliente.id}, '${cliente.nombre}', '${cliente.direccion}', '${cliente.telefono}')" title="Editar Cliente">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button class="action-btn delete-btn" onclick="eliminarCliente(${cliente.id})" title="Eliminar Cliente">
-                                <i class="fas fa-trash-alt"></i>
-                            </button>
-                            <button class="action-btn" onclick="marcarPrestamoComoPagado(${prestamo.id})" title="Marcar como Pagado">
-                                <i class="fas fa-check"></i>
-                            </button>
-                            <button class="action-btn" onclick="abrirModalPago(${prestamo.id})" title="Registrar Pago">
-                                <i class="fas fa-dollar-sign"></i>
-                            </button>
+                        <td class="actions-cell">
+                            <div class="action-buttons">
+                                <button class="action-btn" onclick="abrirPrestamoModal(${cliente.id})" title="Nuevo Préstamo">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                                <button class="action-btn" onclick="abrirEditClienteModal(${cliente.id}, '${cliente.nombre}', '${cliente.direccion}', '${cliente.telefono}')" title="Editar Cliente">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="action-btn delete-btn" onclick="eliminarCliente(${cliente.id})" title="Eliminar Cliente">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                                <button class="action-btn success-btn" onclick="marcarPrestamoComoPagado(${prestamo.id})" title="Marcar como Pagado">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                <button class="action-btn primary-btn" onclick="abrirModalCuota(${prestamo.id})" title="Registrar Cuota">
+                                    <i class="fas fa-dollar-sign"></i>
+                                </button>
+                                <button class="action-btn warning-btn" onclick="abrirModalRefinanciar(${prestamo.id})" title="Refinanciar">
+                                    <i class="fas fa-redo"></i>
+                                </button>
+                                <button class="action-btn info-btn" onclick="verHistorialCuotas(${prestamo.id})" title="Ver Cuotas">
+                                    <i class="fas fa-history"></i>
+                                </button>
+                            </div>
                         </td>
                     `;
                     tBody.appendChild(tr);
@@ -154,12 +194,12 @@ async function cargarClientesAdmin() {
         });
     } catch (error) {
         console.error('Error al cargar clientes:', error);
-        tBody.innerHTML = '<tr><td colspan="14">Error de conexión al servidor.</td></tr>';
+        tBody.innerHTML = '<tr><td colspan="16">Error de conexión al servidor.</td></tr>';
     }
 }
 
 /**
- * Carga los clientes para trabajadores (sin botones de administrador)
+ * Carga los clientes para trabajadores (con funcionalidades limitadas)
  */
 async function cargarClientesTrabajador() {
     const tBody = document.querySelector('#clientesTableTrabajador tbody');
@@ -169,14 +209,14 @@ async function cargarClientesTrabajador() {
         const { res, data } = await fetchJSON('/api/clientes');
         if (!res.ok) {
             console.error('Error al cargar clientes:', data?.msg || res.statusText);
-            tBody.innerHTML = '<tr><td colspan="13">Error al cargar clientes.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="15">Error al cargar clientes.</td></tr>';
             return;
         }
 
         tBody.innerHTML = '';
         
         if (data.length === 0) {
-            tBody.innerHTML = '<tr><td colspan="13" class="text-center">No hay clientes con préstamos activos.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="15" class="text-center">No hay clientes con préstamos activos.</td></tr>';
             return;
         }
 
@@ -202,6 +242,11 @@ async function cargarClientesTrabajador() {
                         }
                     }
                     
+                    // Determinar icono de tipo de préstamo
+                    const iconoTipo = prestamo.tipo_prestamo === 'REF' ? 
+                        '<i class="fas fa-redo-alt" title="Refinanciación"></i>' : 
+                        '<i class="fas fa-plus-circle" title="Crédito Reciente"></i>';
+                    
                     tr.className = claseAlerta;
                     tr.innerHTML = `
                         <td>${cliente.id}</td>
@@ -209,14 +254,25 @@ async function cargarClientesTrabajador() {
                         <td>${cliente.nombre || ''}</td>
                         <td>${cliente.direccion || ''}</td>
                         <td>${cliente.telefono || ''}</td>
-                        <td>S/ ${(prestamo.monto || 0).toFixed(2)}</td>
-                        <td>S/ ${(prestamo.saldo || 0).toFixed(2)}</td>
-                        <td>${prestamo.tipo || 'N/A'}</td>
-                        <td>${prestamo.dt || 0}</td>
-                        <td>${prestamo.pagos ? prestamo.pagos.length : 0}</td>
-                        <td>S/ ${(prestamo.deuda_vencida || 0).toFixed(2)}</td>
-                        <td>S/ ${(prestamo.cuota || 0).toFixed(2)}</td>
-                        <td>${prestamo.fecha_fin || 'N/A'}</td>
+                        <td>${formatearMoneda(prestamo.monto_principal)}</td>
+                        <td><strong>${formatearMoneda(prestamo.monto_total)}</strong></td>
+                        <td>${formatearMoneda(prestamo.saldo)}</td>
+                        <td>${iconoTipo} ${prestamo.tipo_prestamo}</td>
+                        <td>${prestamo.tipo_frecuencia || 'Diario'}</td>
+                        <td><span class="badge">${prestamo.dt || 0}</span></td>
+                        <td>${prestamo.total_cuotas || 0}</td>
+                        <td class="deuda-vencida">${formatearMoneda(prestamo.deuda_vencida)}</td>
+                        <td>${formatearMoneda(prestamo.cuota_diaria)}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="action-btn primary-btn" onclick="abrirModalCuota(${prestamo.id})" title="Registrar Cuota">
+                                    <i class="fas fa-dollar-sign"></i>
+                                </button>
+                                <button class="action-btn info-btn" onclick="verHistorialCuotas(${prestamo.id})" title="Ver Cuotas">
+                                    <i class="fas fa-history"></i>
+                                </button>
+                            </div>
+                        </td>
                     `;
                     tBody.appendChild(tr);
                 });
@@ -224,7 +280,7 @@ async function cargarClientesTrabajador() {
         });
     } catch (error) {
         console.error('Error al cargar clientes:', error);
-        tBody.innerHTML = '<tr><td colspan="13">Error de conexión al servidor.</td></tr>';
+        tBody.innerHTML = '<tr><td colspan="15">Error de conexión al servidor.</td></tr>';
     }
 }
 
@@ -294,7 +350,7 @@ async function cargarResumenCreditos() {
             Object.keys(elementos).forEach(key => {
                 if (elementos[key]) {
                     if (key.includes('deuda')) {
-                        elementos[key].textContent = `S/ ${parseFloat(data.deudaTotal || 0).toFixed(2)}`;
+                        elementos[key].textContent = formatearMoneda(data.deudaTotal || 0);
                     } else if (key.includes('total')) {
                         elementos[key].textContent = data.totalCreditos || 0;
                     } else if (key.includes('vigentes')) {
@@ -313,6 +369,171 @@ async function cargarResumenCreditos() {
 }
 
 // ---- FUNCIONES DE MODAL Y FORMULARIOS ----
+
+/**
+ * Abre el modal para registrar cuotas (reemplaza el modal de pagos)
+ */
+function abrirModalCuota(prestamoId) {
+    document.getElementById('cuotaModal').style.display = 'block';
+    document.getElementById('cuotaForm').reset();
+    document.getElementById('cuotaPrestamoId').value = prestamoId;
+    
+    // Calcular y mostrar cuota sugerida
+    calcularCuotaSugerida(prestamoId);
+}
+
+function cerrarModalCuota() {
+    document.getElementById('cuotaModal').style.display = 'none';
+    document.getElementById('cuotaForm').reset();
+}
+
+/**
+ * Abre el modal para refinanciar préstamos
+ */
+function abrirModalRefinanciar(prestamoId) {
+    document.getElementById('refinanciarModal').style.display = 'block';
+    document.getElementById('refinanciarForm').reset();
+    document.getElementById('refinanciarPrestamoId').value = prestamoId;
+    
+    // Cargar información del préstamo actual
+    cargarInfoPrestamoRefinanciar(prestamoId);
+}
+
+function cerrarModalRefinanciar() {
+    document.getElementById('refinanciarModal').style.display = 'none';
+    document.getElementById('refinanciarForm').reset();
+}
+
+/**
+ * Abre el modal para ver historial de cuotas
+ */
+async function verHistorialCuotas(prestamoId) {
+    try {
+        const { res, data } = await fetchJSON(`/api/prestamos/${prestamoId}/cuotas`);
+        if (res.ok) {
+            mostrarHistorialCuotas(data);
+        } else {
+            alert('Error al cargar el historial de cuotas');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error de conexión al servidor');
+    }
+}
+
+function mostrarHistorialCuotas(data) {
+    const modal = document.getElementById('historialCuotasModal');
+    const tbody = document.querySelector('#historialCuotasTable tbody');
+    const totalPagado = document.getElementById('totalPagadoCuotas');
+    
+    tbody.innerHTML = '';
+    
+    if (data.cuotas && data.cuotas.length > 0) {
+        data.cuotas.forEach(cuota => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${cuota.fecha_pago}</td>
+                <td>${formatearMoneda(cuota.monto)}</td>
+                <td>${cuota.descripcion || 'Cuota diaria'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } else {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center">No hay cuotas registradas</td></tr>';
+    }
+    
+    totalPagado.textContent = formatearMoneda(data.total_pagado || 0);
+    modal.style.display = 'block';
+}
+
+function cerrarHistorialCuotas() {
+    document.getElementById('historialCuotasModal').style.display = 'none';
+}
+
+/**
+ * Calcula la cuota sugerida basada en la deuda vencida o cuota diaria
+ */
+async function calcularCuotaSugerida(prestamoId) {
+    try {
+        // Aquí podrías hacer una llamada para obtener info detallada del préstamo
+        // Por simplicidad, usaremos los datos ya cargados en la tabla
+        const rows = document.querySelectorAll('#clientesTableAdmin tbody tr, #clientesTableTrabajador tbody tr');
+        
+        for (let row of rows) {
+            const buttons = row.querySelectorAll('button[onclick*="abrirModalCuota"]');
+            for (let button of buttons) {
+                if (button.onclick.toString().includes(prestamoId)) {
+                    const deudaVencidaText = row.querySelector('.deuda-vencida')?.textContent || 'S/ 0.00';
+                    const deudaVencida = parseFloat(deudaVencidaText.replace('S/ ', ''));
+                    
+                    const cuotaInput = document.getElementById('cuotaMonto');
+                    const sugerenciaDiv = document.getElementById('cuotaSugerencia');
+                    
+                    if (deudaVencida > 0) {
+                        cuotaInput.placeholder = `Sugerido: S/ ${deudaVencida.toFixed(2)}`;
+                        sugerenciaDiv.innerHTML = `
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Deuda vencida: ${formatearMoneda(deudaVencida)}
+                        `;
+                        sugerenciaDiv.className = 'sugerencia-alerta';
+                    } else {
+                        sugerenciaDiv.innerHTML = `
+                            <i class="fas fa-info-circle"></i>
+                            Ingrese el monto de la cuota diaria
+                        `;
+                        sugerenciaDiv.className = 'sugerencia-info';
+                    }
+                    return;
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error calculando cuota sugerida:', error);
+    }
+}
+
+/**
+ * Carga información del préstamo para refinanciar
+ */
+async function cargarInfoPrestamoRefinanciar(prestamoId) {
+    try {
+        // Buscar información del préstamo en la tabla cargada
+        const rows = document.querySelectorAll('#clientesTableAdmin tbody tr');
+        
+        for (let row of rows) {
+            const buttons = row.querySelectorAll('button[onclick*="abrirModalRefinanciar"]');
+            for (let button of buttons) {
+                if (button.onclick.toString().includes(prestamoId)) {
+                    const cells = row.querySelectorAll('td');
+                    const saldoText = cells[7]?.textContent || 'S/ 0.00';
+                    const saldoPendiente = parseFloat(saldoText.replace('S/ ', ''));
+                    
+                    document.getElementById('saldoPendienteRefinanciar').textContent = formatearMoneda(saldoPendiente);
+                    document.getElementById('refinanciarInteres').value = '20'; // Interés por defecto
+                    document.getElementById('refinanciarCuotaDiaria').value = Math.ceil(saldoPendiente * 1.2 / 30); // Sugerencia
+                    
+                    return;
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error cargando info para refinanciar:', error);
+    }
+}
+
+/**
+ * Actualiza el monto total cuando cambian monto principal o interés
+ */
+function actualizarMontoTotal() {
+    const montoPrincipal = parseFloat(document.getElementById('prestamoMontoInput')?.value || 0);
+    const interes = parseFloat(document.getElementById('prestamoInteresInput')?.value || 0);
+    const montoTotal = calcularMontoTotal(montoPrincipal, interes);
+    
+    const montoTotalDisplay = document.getElementById('montoTotalDisplay');
+    if (montoTotalDisplay) {
+        montoTotalDisplay.textContent = formatearMoneda(montoTotal);
+    }
+}
 
 /**
  * Abre el modal para agregar/editar trabajadores
@@ -365,6 +586,12 @@ function abrirClienteModal() {
     // Establecer fecha actual por defecto
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('prestamoFechaInicioInput').value = today;
+    
+    // Limpiar display de monto total
+    const montoTotalDisplay = document.getElementById('montoTotalDisplay');
+    if (montoTotalDisplay) {
+        montoTotalDisplay.textContent = formatearMoneda(0);
+    }
 }
 
 function cerrarClienteModal() {
@@ -399,6 +626,12 @@ function abrirPrestamoModal(clienteId) {
     // Establecer fecha actual por defecto
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('prestamoFechaInicioNuevo').value = today;
+    
+    // Limpiar display de monto total
+    const montoTotalDisplayNuevo = document.getElementById('montoTotalDisplayNuevo');
+    if (montoTotalDisplayNuevo) {
+        montoTotalDisplayNuevo.textContent = formatearMoneda(0);
+    }
 }
 
 function cerrarPrestamoModal() {
@@ -406,18 +639,13 @@ function cerrarPrestamoModal() {
     document.getElementById('prestamoForm').reset();
 }
 
-/**
- * Abre el modal para registrar pagos
- */
+// Mantener compatibilidad con funciones antiguas
 function abrirModalPago(prestamoId) {
-    document.getElementById('pagoModal').style.display = 'block';
-    document.getElementById('pagoForm').reset();
-    document.getElementById('pagoPrestamoId').value = prestamoId;
+    abrirModalCuota(prestamoId);
 }
 
 function cerrarModalPago() {
-    document.getElementById('pagoModal').style.display = 'none';
-    document.getElementById('pagoForm').reset();
+    cerrarModalCuota();
 }
 
 // ---- FUNCIONES DE ELIMINACIÓN Y CONFIRMACIÓN ----
@@ -471,7 +699,7 @@ async function eliminarCliente(id) {
  * Marca un préstamo como pagado manualmente
  */
 async function marcarPrestamoComoPagado(prestamoId) {
-    if (!confirm('¿Estás seguro de que deseas marcar este préstamo como pagado?')) {
+    if (!confirm('¿Estás seguro de que deseas marcar este préstamo como pagado? Esta acción no se puede deshacer.')) {
         return;
     }
 
@@ -503,7 +731,7 @@ async function buscarHistorial(searchText) {
     tBody.innerHTML = '';
 
     if (searchText.length < 2) {
-        tBody.innerHTML = '<tr><td colspan="7">Ingresa al menos 2 caracteres para buscar.</td></tr>';
+        tBody.innerHTML = '<tr><td colspan="8">Ingresa al menos 2 caracteres para buscar.</td></tr>';
         return;
     }
 
@@ -511,12 +739,12 @@ async function buscarHistorial(searchText) {
         const { res, data } = await fetchJSON(`/api/clientes/search?q=${encodeURIComponent(searchText)}`);
         if (!res.ok) {
             console.error('Error al buscar historial:', data?.msg || res.statusText);
-            tBody.innerHTML = '<tr><td colspan="7">Error al cargar el historial.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="8">Error al cargar el historial.</td></tr>';
             return;
         }
 
         if (data.length === 0) {
-            tBody.innerHTML = '<tr><td colspan="7">No se encontraron clientes para esa búsqueda.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="8">No se encontraron clientes para esa búsqueda.</td></tr>';
             return;
         }
 
@@ -525,14 +753,19 @@ async function buscarHistorial(searchText) {
             if (cliente.prestamos && cliente.prestamos.length > 0) {
                 cliente.prestamos.forEach(prestamo => {
                     const tr = document.createElement('tr');
+                    const iconoTipo = prestamo.tipo_prestamo === 'REF' ? 
+                        '<i class="fas fa-redo-alt" title="Refinanciación"></i>' : 
+                        '<i class="fas fa-plus-circle" title="Crédito Reciente"></i>';
+                    
                     tr.innerHTML = `
                         <td>${cliente.nombre}</td>
                         <td>${cliente.dni || 'N/A'}</td>
-                        <td>S/ ${(prestamo.monto || 0).toFixed(2)}</td>
+                        <td>${formatearMoneda(prestamo.monto_principal)}</td>
+                        <td>${formatearMoneda(prestamo.monto_total)}</td>
                         <td>${(prestamo.interes || 0).toFixed(2)}%</td>
-                        <td>${prestamo.tipo || 'N/A'}</td>
+                        <td>${iconoTipo} ${prestamo.tipo_prestamo}</td>
                         <td>${prestamo.fecha_inicio || 'N/A'}</td>
-                        <td>${prestamo.estado || 'N/A'}</td>
+                        <td><span class="badge-${prestamo.estado}">${prestamo.estado || 'N/A'}</span></td>
                     `;
                     tBody.appendChild(tr);
                 });
@@ -541,7 +774,7 @@ async function buscarHistorial(searchText) {
 
     } catch (error) {
         console.error('Error en la búsqueda del historial:', error);
-        tBody.innerHTML = '<tr><td colspan="7">Error de conexión al servidor.</td></tr>';
+        tBody.innerHTML = '<tr><td colspan="8">Error de conexión al servidor.</td></tr>';
     }
 }
 
@@ -791,6 +1024,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Formulario de clientes y préstamo inicial
         const clienteForm = document.getElementById('clienteForm');
         if (clienteForm) {
+            // Agregar eventos para cálculo automático de monto total
+            const montoInput = document.getElementById('prestamoMontoInput');
+            const interesInput = document.getElementById('prestamoInteresInput');
+            
+            if (montoInput && interesInput) {
+                montoInput.addEventListener('input', actualizarMontoTotal);
+                interesInput.addEventListener('input', actualizarMontoTotal);
+            }
+
             clienteForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
 
@@ -804,7 +1046,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const prestamoData = {
                     monto: parseFloat(document.getElementById('prestamoMontoInput').value),
                     interes: parseFloat(document.getElementById('prestamoInteresInput').value),
-                    tipo: document.getElementById('prestamoTipoInput').value,
+                    tipo_frecuencia: document.getElementById('prestamoTipoInput').value,
                     cuota: parseFloat(document.getElementById('prestamoCuotaInput').value),
                     fecha_inicio: document.getElementById('prestamoFechaInicioInput').value
                 };
@@ -867,16 +1109,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Formulario de nuevo préstamo
         const prestamoForm = document.getElementById('prestamoForm');
         if (prestamoForm) {
+            // Agregar eventos para cálculo automático de monto total
+            const montoNuevoInput = document.getElementById('prestamoMontoNuevo');
+            const interesNuevoInput = document.getElementById('prestamoInteresNuevo');
+            
+            if (montoNuevoInput && interesNuevoInput) {
+                montoNuevoInput.addEventListener('input', () => {
+                    const montoPrincipal = parseFloat(montoNuevoInput.value || 0);
+                    const interes = parseFloat(interesNuevoInput.value || 0);
+                    const montoTotal = calcularMontoTotal(montoPrincipal, interes);
+                    
+                    const montoTotalDisplayNuevo = document.getElementById('montoTotalDisplayNuevo');
+                    if (montoTotalDisplayNuevo) {
+                        montoTotalDisplayNuevo.textContent = formatearMoneda(montoTotal);
+                    }
+                });
+                
+                interesNuevoInput.addEventListener('input', () => {
+                    const montoPrincipal = parseFloat(montoNuevoInput.value || 0);
+                    const interes = parseFloat(interesNuevoInput.value || 0);
+                    const montoTotal = calcularMontoTotal(montoPrincipal, interes);
+                    
+                    const montoTotalDisplayNuevo = document.getElementById('montoTotalDisplayNuevo');
+                    if (montoTotalDisplayNuevo) {
+                        montoTotalDisplayNuevo.textContent = formatearMoneda(montoTotal);
+                    }
+                });
+            }
+
             prestamoForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 const cliente_id = document.getElementById('prestamoClienteId').value;
                 const monto = parseFloat(document.getElementById('prestamoMontoNuevo').value);
                 const interes = parseFloat(document.getElementById('prestamoInteresNuevo').value);
-                const tipo = document.getElementById('prestamoTipoNuevo').value;
-                const cuota = parseFloat(document.getElementById('prestamoCuotaNuevo').value);
+                const tipo_frecuencia = document.getElementById('prestamoTipoNuevo').value;
+                const cuota_diaria = parseFloat(document.getElementById('prestamoCuotaNuevo').value);
                 const fecha_inicio = document.getElementById('prestamoFechaInicioNuevo').value;
 
-                const body = { cliente_id, monto, interes, tipo, cuota, fecha_inicio };
+                const body = { cliente_id, monto, interes, tipo_frecuencia, cuota_diaria, fecha_inicio };
 
                 try {
                     const { res, data } = await fetchJSON('/api/prestamos', 'POST', body);
@@ -896,7 +1166,71 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
 
-        // Formulario de pagos
+        // Formulario de cuotas (reemplaza el de pagos)
+        const cuotaForm = document.getElementById('cuotaForm');
+        if (cuotaForm) {
+            cuotaForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const prestamoId = document.getElementById('cuotaPrestamoId').value;
+                const monto = parseFloat(document.getElementById('cuotaMonto').value);
+                const descripcion = document.getElementById('cuotaDescripcion').value;
+
+                try {
+                    const { res, data } = await fetchJSON(`/api/prestamos/${prestamoId}/cuota`, 'POST', { 
+                        monto, 
+                        descripcion 
+                    });
+
+                    if (res.ok) {
+                        showNotification('Cuota registrada exitosamente', 'success');
+                        cerrarModalCuota();
+                        await cargarClientesAdmin();
+                        await cargarResumenCreditos();
+                    } else {
+                        alert(data?.msg || 'Error al registrar la cuota.');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error de conexión al servidor.');
+                }
+            });
+        }
+
+        // Formulario de refinanciación
+        const refinanciarForm = document.getElementById('refinanciarForm');
+        if (refinanciarForm) {
+            refinanciarForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const prestamoId = document.getElementById('refinanciarPrestamoId').value;
+                const interes = parseFloat(document.getElementById('refinanciarInteres').value);
+                const cuota_diaria = parseFloat(document.getElementById('refinanciarCuotaDiaria').value);
+
+                if (!confirm('¿Estás seguro de refinanciar este préstamo? Esta acción marcará el préstamo original como refinanciado.')) {
+                    return;
+                }
+
+                try {
+                    const { res, data } = await fetchJSON(`/api/prestamos/${prestamoId}/refinanciar`, 'POST', { 
+                        interes, 
+                        cuota_diaria 
+                    });
+
+                    if (res.ok) {
+                        showNotification('Préstamo refinanciado exitosamente', 'success');
+                        cerrarModalRefinanciar();
+                        await cargarClientesAdmin();
+                        await cargarResumenCreditos();
+                    } else {
+                        alert(data?.msg || 'Error al refinanciar el préstamo.');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error de conexión al servidor.');
+                }
+            });
+        }
+
+        // Mantener compatibilidad con el formulario de pagos antiguo
         const pagoForm = document.getElementById('pagoForm');
         if (pagoForm) {
             pagoForm.addEventListener('submit', async function(e) {
@@ -905,7 +1239,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const monto = parseFloat(document.getElementById('pagoMonto').value);
 
                 try {
-                    const { res, data } = await fetchJSON(`/api/prestamos/${prestamoId}/pagar`, 'POST', { monto });
+                    const { res, data } = await fetchJSON(`/api/prestamos/${prestamoId}/cuota`, 'POST', { monto });
 
                     if (res.ok) {
                         showNotification('Pago registrado exitosamente', 'success');
@@ -928,6 +1262,62 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (currentPath === '/trabajador') {
         await cargarClientesTrabajador();
         await cargarResumenCreditos();
+
+        // Formulario de cuotas para trabajadores
+        const cuotaForm = document.getElementById('cuotaForm');
+        if (cuotaForm) {
+            cuotaForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const prestamoId = document.getElementById('cuotaPrestamoId').value;
+                const monto = parseFloat(document.getElementById('cuotaMonto').value);
+                const descripcion = document.getElementById('cuotaDescripcion')?.value || 'Cuota diaria';
+
+                try {
+                    const { res, data } = await fetchJSON(`/api/prestamos/${prestamoId}/cuota`, 'POST', { 
+                        monto, 
+                        descripcion 
+                    });
+
+                    if (res.ok) {
+                        showNotification('Cuota registrada exitosamente', 'success');
+                        cerrarModalCuota();
+                        await cargarClientesTrabajador();
+                        await cargarResumenCreditos();
+                    } else {
+                        alert(data?.msg || 'Error al registrar la cuota.');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error de conexión al servidor.');
+                }
+            });
+        }
+
+        // Mantener compatibilidad con formulario de pagos para trabajadores
+        const pagoForm = document.getElementById('pagoForm');
+        if (pagoForm) {
+            pagoForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const prestamoId = document.getElementById('pagoPrestamoId').value;
+                const monto = parseFloat(document.getElementById('pagoMonto').value);
+
+                try {
+                    const { res, data } = await fetchJSON(`/api/prestamos/${prestamoId}/cuota`, 'POST', { monto });
+
+                    if (res.ok) {
+                        showNotification('Pago registrado exitosamente', 'success');
+                        cerrarModalPago();
+                        await cargarClientesTrabajador();
+                        await cargarResumenCreditos();
+                    } else {
+                        alert(data?.msg || 'Error al registrar el pago.');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error de conexión al servidor.');
+                }
+            });
+        }
     }
 
     // ---- EVENT LISTENER PARA CERRAR SESIÓN ----
@@ -948,7 +1338,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.onclick = function(event) {
         const modales = [
             'workerModal', 'clienteModal', 'editClienteModal', 
-            'prestamoModal', 'pagoModal'
+            'prestamoModal', 'pagoModal', 'cuotaModal', 
+            'refinanciarModal', 'historialCuotasModal'
         ];
         
         modales.forEach(modalId => {
@@ -979,6 +1370,18 @@ window.addEventListener('unhandledrejection', function(event) {
     event.preventDefault();
 });
 
+/**
+ * Actualiza automáticamente los préstamos cada 5 minutos
+ */
+setInterval(async () => {
+    try {
+        await fetchJSON('/api/actualizar_prestamos', 'POST');
+        console.log('Préstamos actualizados automáticamente');
+    } catch (error) {
+        console.warn('Error en actualización automática:', error);
+    }
+}, 5 * 60 * 1000); // 5 minutos
+
 // Exportar funciones principales para uso global
 window.cargarClientesAdmin = cargarClientesAdmin;
 window.cargarClientesTrabajador = cargarClientesTrabajador;
@@ -1002,4 +1405,13 @@ window.abrirPrestamoModal = abrirPrestamoModal;
 window.cerrarPrestamoModal = cerrarPrestamoModal;
 window.abrirModalPago = abrirModalPago;
 window.cerrarModalPago = cerrarModalPago;
+window.abrirModalCuota = abrirModalCuota;
+window.cerrarModalCuota = cerrarModalCuota;
+window.abrirModalRefinanciar = abrirModalRefinanciar;
+window.cerrarModalRefinanciar = cerrarModalRefinanciar;
+window.verHistorialCuotas = verHistorialCuotas;
+window.cerrarHistorialCuotas = cerrarHistorialCuotas;
 window.togglePasswordVisibility = togglePasswordVisibility;
+window.actualizarMontoTotal = actualizarMontoTotal;
+window.calcularMontoTotal = calcularMontoTotal;
+window.formatearMoneda = formatearMoneda;
