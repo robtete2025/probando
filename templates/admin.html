@@ -24,6 +24,7 @@
             <div>Créditos Vigentes: <span id="creditosVigentes">0</span></div>
             <div>Créditos Vencidos: <span id="creditosVencidos">0</span></div>
             <div>Deuda Total: <span id="deudaTotal">S/ 0.00</span></div>
+            <div>Deuda Vencida: <span id="deudaVencidaTotal">S/ 0.00</span></div>
         </div>
     </section>
 
@@ -36,9 +37,14 @@
     <!-- PESTAÑA DE CLIENTES -->
     <section id="clientesTab" class="tab-content active">
         <div class="toolbar">
-            <button onclick="abrirClienteModal()">
-                <i class="fas fa-user-plus"></i> Añadir Cliente
-            </button>
+            <div class="button-group">
+                <button onclick="abrirClienteModal()" class="btn-half">
+                    <i class="fas fa-user-plus"></i> Añadir Cliente
+                </button>
+                <button onclick="abrirNuevoPrestamoModal()" class="btn-half">
+                    <i class="fas fa-money-bill-wave"></i> Nuevo Préstamo
+                </button>
+            </div>
             <input type="text" id="buscarClienteAdmin" placeholder="Buscar cliente (DNI o nombre)" oninput="filtrarClientes(this.value)" />
             <button onclick="exportarClientesExcel()">
                 <i class="fas fa-file-excel"></i> Exportar Excel
@@ -63,6 +69,7 @@
                         <th>Deuda Vencida</th>
                         <th>Cuota Diaria</th>
                         <th>Fecha Fin</th>
+                        <th>Estado</th>
                         <th>Acciones</th>
                     </tr>
                 </thead>
@@ -115,11 +122,13 @@
                         <th>Interés</th>
                         <th>Tipo</th>
                         <th>Fecha Inicio</th>
+                        <th>Fecha Pago Completo</th>
                         <th>Estado</th>
+                        <th>Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td colspan="8" class="text-center">Busca un cliente para ver su historial.</td></tr>
+                    <tr><td colspan="10" class="text-center">Busca un cliente para ver su historial.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -176,6 +185,52 @@
         </div>
     </div>
 
+    <!-- MODAL: NUEVO PRÉSTAMO PARA CLIENTE EXISTENTE -->
+    <div id="nuevoPrestamoModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="cerrarNuevoPrestamoModal()">&times;</span>
+            <h2>Crear Nuevo Préstamo</h2>
+            <form id="nuevoPrestamoForm">
+                <label for="selectCliente">Cliente *:</label>
+                <select id="selectCliente" required>
+                    <option value="">Seleccione un cliente</option>
+                    <!-- Se carga dinámicamente -->
+                </select>
+                
+                <div id="clienteSeleccionadoInfo" class="cliente-info" style="display:none;">
+                    <!-- Información del cliente seleccionado -->
+                </div>
+
+                <label for="nuevoPrestamoMonto">Monto Principal (S/) *:</label>
+                <input type="number" id="nuevoPrestamoMonto" step="0.01" min="0" required />
+
+                <label for="nuevoPrestamoInteres">Interés (%) *:</label>
+                <input type="number" id="nuevoPrestamoInteres" step="0.01" min="0" required />
+
+                <div class="monto-total-display">
+                    <strong>Monto Total: <span id="nuevoMontoTotalDisplay">S/ 0.00</span></strong>
+                </div>
+
+                <label for="nuevoPrestamoTipo">Frecuencia de Pago *:</label>
+                <select id="nuevoPrestamoTipo" required>
+                    <option value="">Seleccione una frecuencia</option>
+                    <option value="Diario">Diario</option>
+                    <option value="Semanal">Semanal</option>
+                    <option value="Quincenal">Quincenal</option>
+                    <option value="Mensual">Mensual</option>
+                </select>
+
+                <label for="nuevoPrestamoCuota">Cuota Diaria (S/) *:</label>
+                <input type="number" id="nuevoPrestamoCuota" step="0.01" min="0" required />
+
+                <label for="nuevoPrestamoFechaInicio">Fecha de Inicio *:</label>
+                <input type="date" id="nuevoPrestamoFechaInicio" required />
+
+                <button type="submit" id="nuevoPrestamoSubmitBtn">Crear Préstamo</button>
+            </form>
+        </div>
+    </div>
+
     <!-- MODAL: EDITAR CLIENTE -->
     <div id="editClienteModal" class="modal">
         <div class="modal-content">
@@ -194,44 +249,6 @@
                 <input type="text" id="editClienteTelefono" />
 
                 <button type="submit">Actualizar Cliente</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- MODAL: AGREGAR NUEVO PRÉSTAMO -->
-    <div id="prestamoModal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn" onclick="cerrarPrestamoModal()">&times;</span>
-            <h2>Añadir Nuevo Préstamo</h2>
-            <form id="prestamoForm">
-                <input type="hidden" id="prestamoClienteId" />
-
-                <label for="prestamoMontoNuevo">Monto Principal (S/) *:</label>
-                <input type="number" id="prestamoMontoNuevo" step="0.01" min="0" required />
-
-                <label for="prestamoInteresNuevo">Interés (%) *:</label>
-                <input type="number" id="prestamoInteresNuevo" step="0.01" min="0" required />
-
-                <div class="monto-total-display">
-                    <strong>Monto Total: <span id="montoTotalDisplayNuevo">S/ 0.00</span></strong>
-                </div>
-
-                <label for="prestamoTipoNuevo">Frecuencia de Pago *:</label>
-                <select id="prestamoTipoNuevo" required>
-                    <option value="">Seleccione una frecuencia</option>
-                    <option value="Diario">Diario</option>
-                    <option value="Semanal">Semanal</option>
-                    <option value="Quincenal">Quincenal</option>
-                    <option value="Mensual">Mensual</option>
-                </select>
-
-                <label for="prestamoCuotaNuevo">Cuota Diaria (S/) *:</label>
-                <input type="number" id="prestamoCuotaNuevo" step="0.01" min="0" required />
-
-                <label for="prestamoFechaInicioNuevo">Fecha de Inicio *:</label>
-                <input type="date" id="prestamoFechaInicioNuevo" required />
-
-                <button type="submit">Guardar Préstamo</button>
             </form>
         </div>
     </div>
@@ -324,6 +341,10 @@
             <span class="close-btn" onclick="cerrarHistorialCuotas()">&times;</span>
             <h2>Historial de Cuotas</h2>
             
+            <div id="prestamoInfoHistorial" class="historial-resumen">
+                <!-- Se llena dinámicamente con info del préstamo -->
+            </div>
+            
             <div class="historial-resumen">
                 <p><strong>Total Pagado:</strong> <span id="totalPagadoCuotas">S/ 0.00</span></p>
             </div>
@@ -335,6 +356,7 @@
                             <th>Fecha</th>
                             <th>Monto</th>
                             <th>Descripción</th>
+                            <th>Estado del Pago</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -342,22 +364,6 @@
                     </tbody>
                 </table>
             </div>
-        </div>
-    </div>
-
-    <!-- MODAL: REGISTRAR PAGO (COMPATIBILIDAD) -->
-    <div id="pagoModal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn" onclick="cerrarModalPago()">&times;</span>
-            <h2>Registrar Pago</h2>
-            <form id="pagoForm">
-                <input type="hidden" id="pagoPrestamoId" />
-                
-                <label for="pagoMonto">Monto del Pago (S/) *:</label>
-                <input type="number" id="pagoMonto" step="0.01" min="0.01" required />
-                
-                <button type="submit">Registrar Pago</button>
-            </form>
         </div>
     </div>
 

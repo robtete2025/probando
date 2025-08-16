@@ -7,8 +7,9 @@ from flask_jwt_extended import (
 )
 from datetime import timedelta, datetime, timezone, date
 import os
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_
 from decimal import Decimal
+import pytz
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
@@ -26,17 +27,30 @@ DATABASE_URL = os.getenv(
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Configuración de JWT en cookies (entorno de desarrollo)
+# Configuración de JWT en cookies
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'prestamo123')
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=30)  # Aumentado a 30 min
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=30)
 app.config['JWT_TOKEN_LOCATION'] = ['cookies']
 app.config['JWT_COOKIE_SECURE'] = False
 app.config['JWT_COOKIE_SAMESITE'] = 'Lax'
 app.config['JWT_COOKIE_CSRF_PROTECT'] = False
 
+# Configuración de zona horaria
+TIMEZONE = pytz.timezone('America/Lima')  # Perú
+
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
+
+
+def get_current_date():
+    """Obtiene la fecha actual en la zona horaria local"""
+    return datetime.now(TIMEZONE).date()
+
+
+def get_current_datetime():
+    """Obtiene la fecha y hora actual en la zona horaria local"""
+    return datetime.now(TIMEZONE)
 
 
 # ---------------- MODELOS ----------------
@@ -61,6 +75,10 @@ class Cliente(db.Model):
 
     prestamos = db.relationship('Prestamo', backref=db.backref('cliente', lazy=True))
 
+    def tiene_prestamo_activo(self):
+        """Verifica si el cliente tiene al menos un préstamo activo"""
+        return any(p.estado == 'activo' for p in self.prestamos)
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -69,7 +87,8 @@ class Cliente(db.Model):
             'direccion': self.direccion,
             'telefono': self.telefono,
             'fecha_registro': self.fecha_registro.isoformat() if self.fecha_registro else None,
-            'prestamos': [p.to_dict() for p in self.prestamos]
+            'prestamos': [p.to_dict() for p in self.prestamos],
+            'tiene_prestamo_activo': self.tiene_prestamo_activo()
         }
 
 
@@ -77,43 +96,86 @@ class Prestamo(db.Model):
     __tablename__ = 'prestamos'
     id = db.Column(db.Integer, primary_key=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id', ondelete='CASCADE'), nullable=False)
-    monto_principal = db.Column(db.Numeric(10, 2), nullable=False)  # Monto original sin interés
-    interes = db.Column(db.Numeric(5, 2), nullable=False)  # Porcentaje de interés
-    monto_total = db.Column(db.Numeric(10, 2), nullable=False)  # Monto + intereses
+    monto_principal = db.Column(db.Numeric(10, 2), nullable=False)
+    interes = db.Column(db.Numeric(5, 2), nullable=False)
+    monto_total = db.Column(db.Numeric(10, 2), nullable=False)
     fecha_inicio = db.Column(db.Date, nullable=False)
     fecha_fin = db.Column(db.Date)
-    estado = db.Column(db.String(50), nullable=False, server_default='activo')
+    fecha_pago_completo = db.Column(db.Date, nullable=True)  # Fecha cuando se completó el pago
+    estado = db.Column(db.String(50), nullable=False, server_default='activo')  # activo, pagado, refinanciado, vencido
     
-    # Campos mejorados para control del préstamo
-    saldo = db.Column(db.Numeric(10, 2), default=0.0)  # Monto pendiente de pago
-    tipo_prestamo = db.Column(db.String(10), default='CR')  # CR (Crédito Reciente) o REF (Refinanciación)
-    tipo_frecuencia = db.Column(db.String(50), nullable=True)  # Diario, Semanal, Quincenal, Mensual
-    dt = db.Column(db.Integer, default=0)  # Días transcurridos desde inicio
-    cuota_diaria = db.Column(db.Numeric(10, 2), default=0.0)  # Cuota que debe pagar por día
-    deuda_vencida = db.Column(db.Numeric(10, 2), default=0.0)  # Deuda acumulada por pagos insuficientes
-    prestamo_refinanciado_id = db.Column(db.Integer, db.ForeignKey('prestamos.id'), nullable=True)  # Para refinanciaciones
+    # Campos de control del préstamo
+    saldo = db.Column(db.Numeric(10, 2), default=0.0)
+    tipo_prestamo = db.Column(db.String(10), default='CR')  # CR, REF
+    tipo_frecuencia = db.Column(db.String(50), nullable=True)
+    dt = db.Column(db.Integer, default=0)
+    cuota_diaria = db.Column(db.Numeric(10, 2), default=0.0)
+    deuda_vencida = db.Column(db.Numeric(10, 2), default=0.0)
+    prestamo_refinanciado_id = db.Column(db.Integer, db.ForeignKey('prestamos.id'), nullable=True)
 
     cuotas = db.relationship('Cuota', backref=db.backref('prestamo', lazy=True))
 
     def calcular_dias_transcurridos(self):
-        """Calcula y actualiza los días transcurridos desde el inicio del préstamo"""
+        """Calcula días transcurridos desde el inicio usando zona horaria local"""
         if self.fecha_inicio:
-            hoy = date.today()
+            hoy = get_current_date()
             self.dt = (hoy - self.fecha_inicio).days
         return self.dt
 
     def calcular_deuda_vencida(self):
-        """Calcula la deuda vencida basada en cuotas no pagadas completamente"""
-        if self.estado != 'activo':
+        """
+        Calcula la deuda vencida más precisa:
+        - Si han pasado días sin pagar la cuota completa
+        - Acumula la diferencia entre lo que debía pagar y lo que realmente pagó
+        """
+        if self.estado not in ['activo', 'vencido']:
+            self.deuda_vencida = Decimal('0.0')
             return 0.0
             
         dias_transcurridos = self.calcular_dias_transcurridos()
+        
+        # Lo que debería haber pagado hasta ahora
         deuda_esperada = Decimal(str(dias_transcurridos)) * self.cuota_diaria
+        
+        # Lo que realmente ha pagado
         total_pagado = sum(Decimal(str(cuota.monto)) for cuota in self.cuotas)
         
-        deuda_vencida = max(0, deuda_esperada - total_pagado)
+        # La diferencia es la deuda vencida (nunca negativa)
+        deuda_vencida = max(Decimal('0.0'), deuda_esperada - total_pagado)
         self.deuda_vencida = deuda_vencida
-        return deuda_vencida
+        
+        # Actualizar estado si está vencido
+        if self.fecha_fin and get_current_date() > self.fecha_fin and self.saldo > 0:
+            self.estado = 'vencido'
+        elif self.estado == 'vencido' and self.saldo <= 0:
+            self.estado = 'pagado'
+            self.fecha_pago_completo = get_current_date()
+        
+        return float(deuda_vencida)
+
+    def calcular_estado_pago_cuota(self, fecha_cuota):
+        """
+        Determina si una cuota fue pagada a tiempo, anticipada o con retraso
+        """
+        if not self.fecha_inicio:
+            return 'desconocido'
+        
+        dias_desde_inicio = (fecha_cuota - self.fecha_inicio).days
+        
+        if dias_desde_inicio < 0:
+            return 'anticipado'
+        elif dias_desde_inicio == 0:
+            return 'a_tiempo'
+        else:
+            # Verificar si pagó la cuota completa del día correspondiente
+            cuotas_hasta_fecha = [c for c in self.cuotas if c.fecha_pago <= fecha_cuota]
+            total_pagado_hasta_fecha = sum(Decimal(str(c.monto)) for c in cuotas_hasta_fecha)
+            esperado_hasta_fecha = Decimal(str(dias_desde_inicio + 1)) * self.cuota_diaria
+            
+            if total_pagado_hasta_fecha >= esperado_hasta_fecha:
+                return 'a_tiempo'
+            else:
+                return 'con_retraso'
 
     def to_dict(self):
         self.calcular_dias_transcurridos()
@@ -127,6 +189,7 @@ class Prestamo(db.Model):
             'interes': float(self.interes),
             'fecha_inicio': self.fecha_inicio.isoformat() if self.fecha_inicio else None,
             'fecha_fin': self.fecha_fin.isoformat() if self.fecha_fin else None,
+            'fecha_pago_completo': self.fecha_pago_completo.isoformat() if self.fecha_pago_completo else None,
             'estado': self.estado,
             'saldo': float(self.saldo),
             'tipo_prestamo': self.tipo_prestamo,
@@ -147,6 +210,7 @@ class Cuota(db.Model):
     monto = db.Column(db.Numeric(10, 2), nullable=False)
     fecha_pago = db.Column(db.Date, nullable=False, server_default=db.func.current_date())
     descripcion = db.Column(db.String(200), nullable=True)
+    estado_pago = db.Column(db.String(20), default='a_tiempo')  # a_tiempo, con_retraso, anticipado
 
     def to_dict(self):
         return {
@@ -154,11 +218,11 @@ class Cuota(db.Model):
             'prestamo_id': self.prestamo_id,
             'monto': float(self.monto),
             'fecha_pago': self.fecha_pago.isoformat() if self.fecha_pago else None,
-            'descripcion': self.descripcion
+            'descripcion': self.descripcion,
+            'estado_pago': self.estado_pago
         }
 
 
-# Mantener tabla de pagos para compatibilidad (puede ser eliminada después)
 class Pago(db.Model):
     __tablename__ = 'pagos'
     id = db.Column(db.Integer, primary_key=True)
@@ -175,15 +239,14 @@ class Pago(db.Model):
         }
 
 
-# ---------------- AUTENTICACIÓN (cookies) ----------------
+# ---------------- AUTENTICACIÓN ----------------
 @app.route('/auth/login', methods=['POST'])
 def login():
-    """Ruta para iniciar sesión y establecer el token JWT en las cookies."""
     data = request.get_json() or {}
     username = data.get('username')
     password = data.get('password')
     if not username or not password:
-        return jsonify({'msg': 'faltan campos'}), 400
+        return jsonify({'msg': 'Faltan campos'}), 400
 
     usuario = Usuario.query.filter_by(username=username).first()
     if usuario and bcrypt.check_password_hash(usuario.password_hash, password):
@@ -198,14 +261,12 @@ def login():
 @app.route('/auth/check', methods=['GET'])
 @jwt_required()
 def check_auth():
-    """Ruta para verificar la autenticación del usuario."""
     rol = get_jwt().get('rol')
     return jsonify({'rol': rol}), 200
 
 
 @app.route('/auth/logout', methods=['POST'])
 def logout():
-    """Ruta para cerrar sesión y eliminar el token JWT de las cookies."""
     resp = jsonify({'msg': 'logout'})
     unset_jwt_cookies(resp)
     return resp, 200
@@ -214,10 +275,6 @@ def logout():
 @jwt_required(optional=True)
 @app.after_request
 def refresh_expiring_jwts(response):
-    """
-    Refresca automáticamente el token JWT si está próximo a expirar.
-    Verifica si el token expirará en los próximos 5 minutos y genera uno nuevo.
-    """
     try:
         exp_timestamp = get_jwt()["exp"]
         now = datetime.now(timezone.utc)
@@ -235,7 +292,6 @@ def refresh_expiring_jwts(response):
 
 # ---------------- FUNCIONES AUXILIARES ----------------
 def calcular_monto_total(monto_principal, interes):
-    """Calcula el monto total incluyendo intereses"""
     monto_principal = Decimal(str(monto_principal))
     interes = Decimal(str(interes))
     interes_monto = monto_principal * (interes / 100)
@@ -243,18 +299,15 @@ def calcular_monto_total(monto_principal, interes):
 
 
 def calcular_fecha_fin(fecha_inicio, tipo_frecuencia, monto_total, cuota_diaria):
-    """
-    Calcula la fecha de vencimiento del préstamo basado en monto total y cuota diaria
-    """
     monto_total = Decimal(str(monto_total))
     cuota_diaria = Decimal(str(cuota_diaria))
     
     if cuota_diaria <= 0:
-        return fecha_inicio + timedelta(days=30)  # Por defecto 30 días
+        return fecha_inicio + timedelta(days=30)
     
     dias_necesarios = int(monto_total / cuota_diaria)
     if monto_total % cuota_diaria > 0:
-        dias_necesarios += 1  # Redondear hacia arriba
+        dias_necesarios += 1
     
     fecha_fin = fecha_inicio + timedelta(days=dias_necesarios)
     return fecha_fin
@@ -262,7 +315,7 @@ def calcular_fecha_fin(fecha_inicio, tipo_frecuencia, monto_total, cuota_diaria)
 
 def actualizar_prestamos_activos():
     """Actualiza días transcurridos y deuda vencida para todos los préstamos activos"""
-    prestamos_activos = Prestamo.query.filter_by(estado='activo').all()
+    prestamos_activos = Prestamo.query.filter(Prestamo.estado.in_(['activo', 'vencido'])).all()
     
     for prestamo in prestamos_activos:
         prestamo.calcular_dias_transcurridos()
@@ -273,335 +326,6 @@ def actualizar_prestamos_activos():
 
 # ---------------- API ENDPOINTS ----------------
 
-@app.route('/api/clientes_con_prestamo', methods=['POST'])
-@jwt_required()
-def crear_cliente_con_prestamo():
-    """Crea un nuevo cliente y un nuevo préstamo en una sola operación."""
-    claims = get_jwt()
-    if claims.get('rol') != 'admin':
-        return jsonify({'msg': 'No autorizado'}), 403
-
-    data = request.get_json() or {}
-
-    cliente_data = data.get('cliente', {})
-    nombre = cliente_data.get('nombre')
-    dni = cliente_data.get('dni')
-    telefono = cliente_data.get('telefono')
-    direccion = cliente_data.get('direccion')
-
-    if not nombre or not dni:
-        return jsonify({'msg': 'Faltan campos de cliente'}), 400
-    if Cliente.query.filter_by(dni=dni).first():
-        return jsonify({'msg': 'Cliente con ese DNI ya existe'}), 400
-
-    prestamo_data = data.get('prestamo', {})
-    monto_principal = prestamo_data.get('monto')
-    interes = prestamo_data.get('interes')
-    cuota_diaria = prestamo_data.get('cuota')
-    fecha_inicio_str = prestamo_data.get('fecha_inicio')
-
-    if not monto_principal or not interes or not cuota_diaria or not fecha_inicio_str:
-        return jsonify({'msg': 'Faltan campos de préstamo'}), 400
-
-    try:
-        fecha_inicio = datetime.fromisoformat(fecha_inicio_str).date()
-        tipo_frecuencia = prestamo_data.get('tipo_frecuencia', 'Diario')
-        
-        # Calcular monto total con intereses
-        monto_total = calcular_monto_total(monto_principal, interes)
-        
-        # Calcular fecha de vencimiento
-        fecha_fin = calcular_fecha_fin(fecha_inicio, tipo_frecuencia, monto_total, cuota_diaria)
-
-        nuevo_cliente = Cliente(
-            nombre=nombre,
-            dni=dni,
-            telefono=telefono,
-            direccion=direccion
-        )
-        db.session.add(nuevo_cliente)
-        db.session.flush()  # Para obtener el ID del cliente
-
-        nuevo_prestamo = Prestamo(
-            cliente_id=nuevo_cliente.id,
-            monto_principal=monto_principal,
-            interes=interes,
-            monto_total=monto_total,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            saldo=monto_total,
-            tipo_prestamo='CR',  # Crédito Reciente por defecto
-            tipo_frecuencia=tipo_frecuencia,
-            cuota_diaria=cuota_diaria,
-            dt=0
-        )
-        db.session.add(nuevo_prestamo)
-        db.session.commit()
-
-        return jsonify({'msg': 'Cliente y préstamo creados', 'cliente': nuevo_cliente.to_dict()}), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'msg': 'Error al crear el cliente y el préstamo', 'error': str(e)}), 500
-
-
-@app.route('/api/clientes', methods=['GET'])
-@jwt_required()
-def api_clientes():
-    """
-    Obtiene los clientes que tienen al menos un préstamo activo.
-    Actualiza automáticamente días transcurridos y deuda vencida.
-    """
-    # Actualizar todos los préstamos activos antes de mostrar
-    actualizar_prestamos_activos()
-    
-    clientes_bd = Cliente.query.all()
-    clientes_con_prestamos_activos = []
-
-    for cliente in clientes_bd:
-        # Filtrar solo préstamos activos
-        prestamos_activos = [p for p in cliente.prestamos if p.estado == 'activo']
-
-        if prestamos_activos:
-            cliente_data = {
-                'id': cliente.id,
-                'nombre': cliente.nombre,
-                'dni': cliente.dni,
-                'direccion': cliente.direccion,
-                'telefono': cliente.telefono,
-                'fecha_registro': cliente.fecha_registro.isoformat() if cliente.fecha_registro else None,
-                'prestamos': [p.to_dict() for p in prestamos_activos]
-            }
-            clientes_con_prestamos_activos.append(cliente_data)
-
-    return jsonify(clientes_con_prestamos_activos), 200
-
-
-@app.route('/api/prestamos/<int:prestamo_id>/cuota', methods=['POST'])
-@jwt_required()
-def registrar_cuota(prestamo_id):
-    """
-    Registra una cuota (minipago) para un préstamo específico.
-    Permitido para roles 'admin' y 'trabajador'.
-    """
-    claims = get_jwt()
-    if claims.get('rol') not in ['admin', 'trabajador']:
-        return jsonify({'msg': 'No autorizado'}), 403
-
-    prestamo = Prestamo.query.get_or_404(prestamo_id)
-    data = request.get_json() or {}
-    monto_cuota = data.get('monto')
-
-    if not monto_cuota or float(monto_cuota) <= 0:
-        return jsonify({'msg': 'Monto de cuota inválido'}), 400
-
-    try:
-        monto_cuota = Decimal(str(monto_cuota))
-        prestamo.calcular_dias_transcurridos()
-
-        # Actualizar el saldo del préstamo
-        if prestamo.saldo <= monto_cuota:
-            monto_real_cuota = prestamo.saldo
-            prestamo.saldo = Decimal('0.0')
-            prestamo.estado = 'pagado'
-        else:
-            monto_real_cuota = monto_cuota
-            prestamo.saldo -= monto_real_cuota
-
-        # Crear el registro de la cuota
-        nueva_cuota = Cuota(
-            prestamo_id=prestamo_id,
-            monto=monto_real_cuota,
-            fecha_pago=date.today(),
-            descripcion=data.get('descripcion', 'Cuota diaria')
-        )
-        db.session.add(nueva_cuota)
-        
-        # Recalcular deuda vencida después del pago
-        prestamo.calcular_deuda_vencida()
-        
-        db.session.commit()
-
-        return jsonify({
-            'msg': 'Cuota registrada exitosamente',
-            'prestamo': prestamo.to_dict(),
-            'cuota': nueva_cuota.to_dict()
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'msg': 'Error al registrar la cuota', 'error': str(e)}), 500
-
-
-@app.route('/api/prestamos/<int:prestamo_id>/refinanciar', methods=['POST'])
-@jwt_required()
-def refinanciar_prestamo(prestamo_id):
-    """
-    Refinancia un préstamo existente. Marca el préstamo original como 'refinanciado'
-    y crea un nuevo préstamo REF con el saldo pendiente más nuevos intereses.
-    """
-    claims = get_jwt()
-    if claims.get('rol') != 'admin':
-        return jsonify({'msg': 'No autorizado'}), 403
-
-    prestamo_original = Prestamo.query.get_or_404(prestamo_id)
-    
-    if prestamo_original.estado != 'activo':
-        return jsonify({'msg': 'Solo se pueden refinanciar préstamos activos'}), 400
-    
-    if prestamo_original.saldo <= 0:
-        return jsonify({'msg': 'El préstamo ya está pagado completamente'}), 400
-
-    data = request.get_json() or {}
-    nuevo_interes = data.get('interes')
-    nueva_cuota_diaria = data.get('cuota_diaria')
-
-    if not nuevo_interes or not nueva_cuota_diaria:
-        return jsonify({'msg': 'Faltan campos: interes y cuota_diaria'}), 400
-
-    try:
-        # Actualizar el préstamo original
-        prestamo_original.calcular_dias_transcurridos()
-        prestamo_original.estado = 'refinanciado'
-        
-        # Calcular nuevo monto total con intereses sobre el saldo pendiente
-        saldo_pendiente = prestamo_original.saldo
-        nuevo_monto_total = calcular_monto_total(saldo_pendiente, nuevo_interes)
-        
-        # Calcular nueva fecha de vencimiento
-        fecha_inicio_refinanciacion = date.today()
-        fecha_fin_refinanciacion = calcular_fecha_fin(
-            fecha_inicio_refinanciacion, 
-            prestamo_original.tipo_frecuencia, 
-            nuevo_monto_total, 
-            nueva_cuota_diaria
-        )
-
-        # Crear el préstamo refinanciado
-        prestamo_refinanciado = Prestamo(
-            cliente_id=prestamo_original.cliente_id,
-            monto_principal=saldo_pendiente,
-            interes=nuevo_interes,
-            monto_total=nuevo_monto_total,
-            fecha_inicio=fecha_inicio_refinanciacion,
-            fecha_fin=fecha_fin_refinanciacion,
-            saldo=nuevo_monto_total,
-            tipo_prestamo='REF',  # Refinanciación
-            tipo_frecuencia=prestamo_original.tipo_frecuencia,
-            cuota_diaria=nueva_cuota_diaria,
-            dt=0,
-            prestamo_refinanciado_id=prestamo_original.id
-        )
-        
-        db.session.add(prestamo_refinanciado)
-        db.session.commit()
-
-        return jsonify({
-            'msg': 'Préstamo refinanciado exitosamente',
-            'prestamo_original': prestamo_original.to_dict(),
-            'prestamo_refinanciado': prestamo_refinanciado.to_dict()
-        }), 201
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'msg': 'Error al refinanciar el préstamo', 'error': str(e)}), 500
-
-
-@app.route('/api/prestamos/<int:prestamo_id>/pagado_manual', methods=['PUT'])
-@jwt_required()
-def marcar_prestamo_pagado(prestamo_id):
-    """
-    Marca manualmente un préstamo como 'pagado' (solo para administradores).
-    Si es una refinanciación, también marca el préstamo original como pagado.
-    """
-    try:
-        claims = get_jwt()
-        if claims.get('rol') != 'admin':
-            return jsonify({'msg': 'No autorizado'}), 403
-
-        prestamo = Prestamo.query.get(prestamo_id)
-        if not prestamo:
-            return jsonify({'msg': 'Préstamo no encontrado'}), 404
-
-        prestamo.estado = 'pagado'
-        prestamo.saldo = Decimal('0.0')
-        prestamo.deuda_vencida = Decimal('0.0')
-        
-        # Si es una refinanciación, también marcar el préstamo original como pagado
-        if prestamo.tipo_prestamo == 'REF' and prestamo.prestamo_refinanciado_id:
-            prestamo_original = Prestamo.query.get(prestamo.prestamo_refinanciado_id)
-            if prestamo_original:
-                prestamo_original.estado = 'pagado'
-                prestamo_original.saldo = Decimal('0.0')
-                prestamo_original.deuda_vencida = Decimal('0.0')
-
-        db.session.commit()
-
-        return jsonify({'msg': 'Préstamo marcado como pagado exitosamente'}), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'msg': 'Error al marcar el préstamo como pagado', 'error': str(e)}), 500
-
-
-@app.route('/api/prestamos', methods=['POST'])
-@jwt_required()
-def api_create_prestamo():
-    """Crea un nuevo préstamo para un cliente existente."""
-    claims = get_jwt()
-    if claims.get('rol') != 'admin':
-        return jsonify({'msg': 'No autorizado'}), 403
-    
-    data = request.get_json() or {}
-    required = ['cliente_id', 'monto', 'interes', 'cuota_diaria', 'fecha_inicio']
-    if not all(k in data for k in required):
-        return jsonify({'msg': 'faltan campos: cliente_id, monto, interes, cuota_diaria, fecha_inicio'}), 400
-    
-    cliente = Cliente.query.get(data['cliente_id'])
-    if not cliente:
-        return jsonify({'msg': 'cliente no existe'}), 404
-
-    try:
-        fecha_inicio = datetime.fromisoformat(data['fecha_inicio']).date()
-        tipo_frecuencia = data.get('tipo_frecuencia', 'Diario')
-        monto_principal = Decimal(str(data['monto']))
-        interes = Decimal(str(data['interes']))
-        cuota_diaria = Decimal(str(data['cuota_diaria']))
-        
-        # Calcular monto total
-        monto_total = calcular_monto_total(monto_principal, interes)
-        fecha_fin = calcular_fecha_fin(fecha_inicio, tipo_frecuencia, monto_total, cuota_diaria)
-
-        p = Prestamo(
-            cliente_id=data['cliente_id'],
-            monto_principal=monto_principal,
-            interes=interes,
-            monto_total=monto_total,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            estado=data.get('estado', 'activo'),
-            saldo=monto_total,
-            tipo_prestamo='CR',  # Crédito Reciente por defecto
-            tipo_frecuencia=tipo_frecuencia,
-            cuota_diaria=cuota_diaria,
-            dt=0
-        )
-        db.session.add(p)
-        db.session.commit()
-        return jsonify(p.to_dict()), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'msg': 'Error al crear préstamo', 'error': str(e)}), 500
-
-
-# Mantener compatibilidad con pagos antiguos
-@app.route('/api/prestamos/<int:prestamo_id>/pagar', methods=['POST'])
-@jwt_required()
-def api_pagar_prestamo(prestamo_id):
-    """Redirige a la nueva API de cuotas para mantener compatibilidad"""
-    return registrar_cuota(prestamo_id)
-
-
-# Resto de endpoints sin cambios significativos...
 @app.route('/api/clientes/search', methods=['GET'])
 @jwt_required()
 def api_search_clientes():
@@ -617,6 +341,11 @@ def api_search_clientes():
 
     resultados_busqueda = []
     for cliente in clientes_encontrados:
+        # Actualizar todos los préstamos del cliente
+        for prestamo in cliente.prestamos:
+            prestamo.calcular_dias_transcurridos()
+            prestamo.calcular_deuda_vencida()
+        
         cliente_data = {
             'id': cliente.id,
             'nombre': cliente.nombre,
@@ -628,6 +357,7 @@ def api_search_clientes():
         }
         resultados_busqueda.append(cliente_data)
 
+    db.session.commit()  # Guardar actualizaciones
     return jsonify(resultados_busqueda), 200
 
 
@@ -640,8 +370,14 @@ def api_historial_prestamos(cliente_id):
         return jsonify({'msg': 'No autorizado'}), 403
 
     cliente = Cliente.query.get_or_404(cliente_id)
-    prestamos = Prestamo.query.filter_by(cliente_id=cliente_id).all()
+    prestamos = Prestamo.query.filter_by(cliente_id=cliente_id).order_by(Prestamo.fecha_inicio.desc()).all()
     
+    # Actualizar información de préstamos
+    for prestamo in prestamos:
+        prestamo.calcular_dias_transcurridos()
+        prestamo.calcular_deuda_vencida()
+    
+    db.session.commit()
     return jsonify([p.to_dict() for p in prestamos]), 200
 
 
@@ -677,7 +413,6 @@ def eliminar_cliente(cliente_id):
         return jsonify({'msg': 'Cliente no encontrado'}), 404
 
     try:
-        # Eliminar cuotas y pagos asociados a los préstamos del cliente
         prestamos_del_cliente = Prestamo.query.filter_by(cliente_id=cliente_id).all()
         for prestamo in prestamos_del_cliente:
             Cuota.query.filter_by(prestamo_id=prestamo.id).delete()
@@ -793,28 +528,42 @@ def api_eliminar_trabajador(id):
 @jwt_required()
 def resumen_creditos():
     """
-    Proporciona un resumen estadístico de los créditos.
-    Actualiza automáticamente antes de calcular.
+    Proporciona un resumen estadístico mejorado de los créditos.
     """
-    # Actualizar todos los préstamos activos
     actualizar_prestamos_activos()
     
+    # Conteos básicos
     total_creditos = Prestamo.query.count()
     creditos_activos = Prestamo.query.filter_by(estado='activo').count()
-    creditos_vencidos = Prestamo.query.filter(
-        Prestamo.estado == 'activo',
-        Prestamo.fecha_fin < date.today()
-    ).count()
+    creditos_vencidos = Prestamo.query.filter_by(estado='vencido').count()
+    creditos_pagados = Prestamo.query.filter_by(estado='pagado').count()
+    creditos_refinanciados = Prestamo.query.filter_by(estado='refinanciado').count()
 
-    deuda_total = db.session.query(func.sum(Prestamo.saldo)).filter_by(estado='activo').scalar()
+    # Créditos vigentes = activos (no vencidos)
+    creditos_vigentes = creditos_activos
+
+    # Deuda total (solo préstamos activos y vencidos)
+    deuda_total = db.session.query(func.sum(Prestamo.saldo)).filter(
+        Prestamo.estado.in_(['activo', 'vencido'])
+    ).scalar()
     if deuda_total is None:
         deuda_total = 0.0
 
+    # Deuda vencida total
+    deuda_vencida_total = db.session.query(func.sum(Prestamo.deuda_vencida)).filter(
+        Prestamo.estado.in_(['activo', 'vencido'])
+    ).scalar()
+    if deuda_vencida_total is None:
+        deuda_vencida_total = 0.0
+
     return jsonify({
         'totalCreditos': total_creditos,
-        'creditosVigentes': creditos_activos - creditos_vencidos,
+        'creditosVigentes': creditos_vigentes,
         'creditosVencidos': creditos_vencidos,
-        'deudaTotal': float(deuda_total)
+        'creditosPagados': creditos_pagados,
+        'creditosRefinanciados': creditos_refinanciados,
+        'deudaTotal': float(deuda_total),
+        'deudaVencidaTotal': float(deuda_vencida_total)
     })
 
 
@@ -831,6 +580,12 @@ def obtener_cuotas_prestamo(prestamo_id):
     
     return jsonify({
         'prestamo_id': prestamo_id,
+        'prestamo_info': {
+            'cliente_nombre': prestamo.cliente.nombre,
+            'monto_total': float(prestamo.monto_total),
+            'saldo_actual': float(prestamo.saldo),
+            'estado': prestamo.estado
+        },
         'cuotas': [c.to_dict() for c in cuotas],
         'total_cuotas': len(cuotas),
         'total_pagado': sum(float(c.monto) for c in cuotas)
@@ -896,4 +651,344 @@ def trabajador_page():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)ientes_con_prestamo', methods=['POST'])
+@jwt_required()
+def crear_cliente_con_prestamo():
+    claims = get_jwt()
+    if claims.get('rol') != 'admin':
+        return jsonify({'msg': 'No autorizado'}), 403
+
+    data = request.get_json() or {}
+    cliente_data = data.get('cliente', {})
+    nombre = cliente_data.get('nombre')
+    dni = cliente_data.get('dni')
+    telefono = cliente_data.get('telefono')
+    direccion = cliente_data.get('direccion')
+
+    if not nombre or not dni:
+        return jsonify({'msg': 'Faltan campos de cliente'}), 400
+    if Cliente.query.filter_by(dni=dni).first():
+        return jsonify({'msg': 'Cliente con ese DNI ya existe'}), 400
+
+    prestamo_data = data.get('prestamo', {})
+    monto_principal = prestamo_data.get('monto')
+    interes = prestamo_data.get('interes')
+    cuota_diaria = prestamo_data.get('cuota')
+    fecha_inicio_str = prestamo_data.get('fecha_inicio')
+
+    if not monto_principal or not interes or not cuota_diaria or not fecha_inicio_str:
+        return jsonify({'msg': 'Faltan campos de préstamo'}), 400
+
+    try:
+        fecha_inicio = datetime.fromisoformat(fecha_inicio_str).date()
+        tipo_frecuencia = prestamo_data.get('tipo_frecuencia', 'Diario')
+        
+        monto_total = calcular_monto_total(monto_principal, interes)
+        fecha_fin = calcular_fecha_fin(fecha_inicio, tipo_frecuencia, monto_total, cuota_diaria)
+
+        nuevo_cliente = Cliente(
+            nombre=nombre,
+            dni=dni,
+            telefono=telefono,
+            direccion=direccion
+        )
+        db.session.add(nuevo_cliente)
+        db.session.flush()
+
+        nuevo_prestamo = Prestamo(
+            cliente_id=nuevo_cliente.id,
+            monto_principal=monto_principal,
+            interes=interes,
+            monto_total=monto_total,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            saldo=monto_total,
+            tipo_prestamo='CR',
+            tipo_frecuencia=tipo_frecuencia,
+            cuota_diaria=cuota_diaria,
+            dt=0
+        )
+        db.session.add(nuevo_prestamo)
+        db.session.commit()
+
+        return jsonify({'msg': 'Cliente y préstamo creados', 'cliente': nuevo_cliente.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'msg': 'Error al crear el cliente y el préstamo', 'error': str(e)}), 500
+
+
+@app.route('/api/clientes', methods=['GET'])
+@jwt_required()
+def api_clientes():
+    actualizar_prestamos_activos()
+    
+    clientes_bd = Cliente.query.all()
+    clientes_con_prestamos_activos = []
+
+    for cliente in clientes_bd:
+        prestamos_activos = [p for p in cliente.prestamos if p.estado in ['activo', 'vencido']]
+
+        if prestamos_activos:
+            cliente_data = {
+                'id': cliente.id,
+                'nombre': cliente.nombre,
+                'dni': cliente.dni,
+                'direccion': cliente.direccion,
+                'telefono': cliente.telefono,
+                'fecha_registro': cliente.fecha_registro.isoformat() if cliente.fecha_registro else None,
+                'prestamos': [p.to_dict() for p in prestamos_activos],
+                'tiene_prestamo_activo': cliente.tiene_prestamo_activo()
+            }
+            clientes_con_prestamos_activos.append(cliente_data)
+
+    return jsonify(clientes_con_prestamos_activos), 200
+
+
+@app.route('/api/clientes_sin_prestamo', methods=['GET'])
+@jwt_required()
+def api_clientes_sin_prestamo():
+    """Obtiene clientes que no tienen préstamos activos para poder crear nuevos préstamos"""
+    claims = get_jwt()
+    if claims.get('rol') != 'admin':
+        return jsonify({'msg': 'No autorizado'}), 403
+
+    clientes_bd = Cliente.query.all()
+    clientes_sin_prestamo_activo = []
+
+    for cliente in clientes_bd:
+        if not cliente.tiene_prestamo_activo():
+            clientes_sin_prestamo_activo.append({
+                'id': cliente.id,
+                'nombre': cliente.nombre,
+                'dni': cliente.dni,
+                'direccion': cliente.direccion,
+                'telefono': cliente.telefono
+            })
+
+    return jsonify(clientes_sin_prestamo_activo), 200
+
+
+@app.route('/api/prestamos/<int:prestamo_id>/cuota', methods=['POST'])
+@jwt_required()
+def registrar_cuota(prestamo_id):
+    claims = get_jwt()
+    if claims.get('rol') not in ['admin', 'trabajador']:
+        return jsonify({'msg': 'No autorizado'}), 403
+
+    prestamo = Prestamo.query.get_or_404(prestamo_id)
+    data = request.get_json() or {}
+    monto_cuota = data.get('monto')
+
+    if not monto_cuota or float(monto_cuota) <= 0:
+        return jsonify({'msg': 'Monto de cuota inválido'}), 400
+
+    try:
+        monto_cuota = Decimal(str(monto_cuota))
+        prestamo.calcular_dias_transcurridos()
+        
+        # Evitar pagos que excedan el saldo
+        if prestamo.saldo <= 0:
+            return jsonify({'msg': 'El préstamo ya está completamente pagado'}), 400
+
+        saldo_completado = False
+        if prestamo.saldo <= monto_cuota:
+            monto_real_cuota = prestamo.saldo
+            prestamo.saldo = Decimal('0.0')
+            prestamo.estado = 'pagado'
+            prestamo.fecha_pago_completo = get_current_date()
+            saldo_completado = True
+        else:
+            monto_real_cuota = monto_cuota
+            prestamo.saldo -= monto_real_cuota
+
+        # Determinar estado del pago
+        fecha_pago = get_current_date()
+        estado_pago = prestamo.calcular_estado_pago_cuota(fecha_pago)
+
+        nueva_cuota = Cuota(
+            prestamo_id=prestamo_id,
+            monto=monto_real_cuota,
+            fecha_pago=fecha_pago,
+            descripcion=data.get('descripcion', 'Cuota diaria'),
+            estado_pago=estado_pago
+        )
+        db.session.add(nueva_cuota)
+        
+        prestamo.calcular_deuda_vencida()
+        db.session.commit()
+
+        message = 'Cuota registrada exitosamente'
+        if saldo_completado:
+            message = '¡PRÉSTAMO PAGADO COMPLETAMENTE! La cuota ha liquidado el saldo pendiente.'
+
+        return jsonify({
+            'msg': message,
+            'prestamo_completado': saldo_completado,
+            'prestamo': prestamo.to_dict(),
+            'cuota': nueva_cuota.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'msg': 'Error al registrar la cuota', 'error': str(e)}), 500
+
+
+@app.route('/api/prestamos/<int:prestamo_id>/refinanciar', methods=['POST'])
+@jwt_required()
+def refinanciar_prestamo(prestamo_id):
+    claims = get_jwt()
+    if claims.get('rol') != 'admin':
+        return jsonify({'msg': 'No autorizado'}), 403
+
+    prestamo_original = Prestamo.query.get_or_404(prestamo_id)
+    
+    if prestamo_original.estado not in ['activo', 'vencido']:
+        return jsonify({'msg': 'Solo se pueden refinanciar préstamos activos o vencidos'}), 400
+    
+    if prestamo_original.saldo <= 0:
+        return jsonify({'msg': 'El préstamo ya está pagado completamente'}), 400
+
+    data = request.get_json() or {}
+    nuevo_interes = data.get('interes')
+    nueva_cuota_diaria = data.get('cuota_diaria')
+
+    if not nuevo_interes or not nueva_cuota_diaria:
+        return jsonify({'msg': 'Faltan campos: interes y cuota_diaria'}), 400
+
+    try:
+        prestamo_original.calcular_dias_transcurridos()
+        prestamo_original.estado = 'refinanciado'
+        
+        saldo_pendiente = prestamo_original.saldo
+        nuevo_monto_total = calcular_monto_total(saldo_pendiente, nuevo_interes)
+        
+        fecha_inicio_refinanciacion = get_current_date()
+        fecha_fin_refinanciacion = calcular_fecha_fin(
+            fecha_inicio_refinanciacion, 
+            prestamo_original.tipo_frecuencia, 
+            nuevo_monto_total, 
+            nueva_cuota_diaria
+        )
+
+        prestamo_refinanciado = Prestamo(
+            cliente_id=prestamo_original.cliente_id,
+            monto_principal=saldo_pendiente,
+            interes=nuevo_interes,
+            monto_total=nuevo_monto_total,
+            fecha_inicio=fecha_inicio_refinanciacion,
+            fecha_fin=fecha_fin_refinanciacion,
+            saldo=nuevo_monto_total,
+            tipo_prestamo='REF',
+            tipo_frecuencia=prestamo_original.tipo_frecuencia,
+            cuota_diaria=nueva_cuota_diaria,
+            dt=0,
+            prestamo_refinanciado_id=prestamo_original.id
+        )
+        
+        db.session.add(prestamo_refinanciado)
+        db.session.commit()
+
+        return jsonify({
+            'msg': 'Préstamo refinanciado exitosamente',
+            'prestamo_original': prestamo_original.to_dict(),
+            'prestamo_refinanciado': prestamo_refinanciado.to_dict()
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'msg': 'Error al refinanciar el préstamo', 'error': str(e)}), 500
+
+
+@app.route('/api/prestamos/<int:prestamo_id>/pagado_manual', methods=['PUT'])
+@jwt_required()
+def marcar_prestamo_pagado(prestamo_id):
+    try:
+        claims = get_jwt()
+        if claims.get('rol') != 'admin':
+            return jsonify({'msg': 'No autorizado'}), 403
+
+        prestamo = Prestamo.query.get(prestamo_id)
+        if not prestamo:
+            return jsonify({'msg': 'Préstamo no encontrado'}), 404
+
+        prestamo.estado = 'pagado'
+        prestamo.saldo = Decimal('0.0')
+        prestamo.deuda_vencida = Decimal('0.0')
+        prestamo.fecha_pago_completo = get_current_date()
+        
+        if prestamo.tipo_prestamo == 'REF' and prestamo.prestamo_refinanciado_id:
+            prestamo_original = Prestamo.query.get(prestamo.prestamo_refinanciado_id)
+            if prestamo_original:
+                prestamo_original.estado = 'pagado'
+                prestamo_original.saldo = Decimal('0.0')
+                prestamo_original.deuda_vencida = Decimal('0.0')
+                prestamo_original.fecha_pago_completo = get_current_date()
+
+        db.session.commit()
+        return jsonify({'msg': 'Préstamo marcado como pagado exitosamente'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'msg': 'Error al marcar el préstamo como pagado', 'error': str(e)}), 500
+
+
+@app.route('/api/prestamos', methods=['POST'])
+@jwt_required()
+def api_create_prestamo():
+    claims = get_jwt()
+    if claims.get('rol') != 'admin':
+        return jsonify({'msg': 'No autorizado'}), 403
+    
+    data = request.get_json() or {}
+    required = ['cliente_id', 'monto', 'interes', 'cuota_diaria', 'fecha_inicio']
+    if not all(k in data for k in required):
+        return jsonify({'msg': 'Faltan campos requeridos'}), 400
+    
+    cliente = Cliente.query.get(data['cliente_id'])
+    if not cliente:
+        return jsonify({'msg': 'Cliente no existe'}), 404
+    
+    # Verificar que el cliente no tenga préstamos activos
+    if cliente.tiene_prestamo_activo():
+        return jsonify({'msg': 'El cliente ya tiene un préstamo activo'}), 400
+
+    try:
+        fecha_inicio = datetime.fromisoformat(data['fecha_inicio']).date()
+        tipo_frecuencia = data.get('tipo_frecuencia', 'Diario')
+        monto_principal = Decimal(str(data['monto']))
+        interes = Decimal(str(data['interes']))
+        cuota_diaria = Decimal(str(data['cuota_diaria']))
+        
+        monto_total = calcular_monto_total(monto_principal, interes)
+        fecha_fin = calcular_fecha_fin(fecha_inicio, tipo_frecuencia, monto_total, cuota_diaria)
+
+        p = Prestamo(
+            cliente_id=data['cliente_id'],
+            monto_principal=monto_principal,
+            interes=interes,
+            monto_total=monto_total,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            estado='activo',
+            saldo=monto_total,
+            tipo_prestamo='CR',
+            tipo_frecuencia=tipo_frecuencia,
+            cuota_diaria=cuota_diaria,
+            dt=0
+        )
+        db.session.add(p)
+        db.session.commit()
+        return jsonify(p.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'msg': 'Error al crear préstamo', 'error': str(e)}), 500
+
+
+# Mantener compatibilidad
+@app.route('/api/prestamos/<int:prestamo_id>/pagar', methods=['POST'])
+@jwt_required()
+def api_pagar_prestamo(prestamo_id):
+    return registrar_cuota(prestamo_id)
+
+
+@app.route('/api/cl
