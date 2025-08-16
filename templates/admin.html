@@ -175,7 +175,9 @@
                 </select>
 
                 <label for="prestamoCuotaInput">Cuota Diaria (S/) *:</label>
-                <input type="number" id="prestamoCuotaInput" step="0.01" min="0" required />
+                <div class="monto-total-display">
+                    <strong>Cuota Diaria: <span id="cuotaDiariaDisplay">S/ 0.00</span></strong>
+                </div>
 
                 <label for="prestamoFechaInicioInput">Fecha de Inicio *:</label>
                 <input type="date" id="prestamoFechaInicioInput" required />
@@ -221,7 +223,9 @@
                 </select>
 
                 <label for="nuevoPrestamoCuota">Cuota Diaria (S/) *:</label>
-                <input type="number" id="nuevoPrestamoCuota" step="0.01" min="0" required />
+                <div class="monto-total-display">
+                    <strong>Cuota Diaria: <span id="nuevoCuotaDiariaDisplay">S/ 0.00</span></strong>
+                </div>
 
                 <label for="nuevoPrestamoFechaInicio">Fecha de Inicio *:</label>
                 <input type="date" id="nuevoPrestamoFechaInicio" required />
@@ -328,7 +332,9 @@
                 <input type="number" id="refinanciarInteres" step="0.01" min="0" required />
                 
                 <label for="refinanciarCuotaDiaria">Nueva Cuota Diaria (S/) *:</label>
-                <input type="number" id="refinanciarCuotaDiaria" step="0.01" min="0" required />
+                <div class="monto-total-display">
+                    <strong>Nueva Cuota Diaria: <span id="refinanciarCuotaDiariaDisplay">S/ 0.00</span></strong>
+                </div>
                 
                 <button type="submit">Refinanciar Préstamo</button>
             </form>

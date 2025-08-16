@@ -405,12 +405,14 @@ def generar_datos_de_prueba():
             db.session.flush()
             
             # Préstamo para cliente 1
+            fecha_inicio1 = db.func.current_date()
             prestamo1 = Prestamo(
                 cliente_id=cliente1.id,
                 monto_principal=Decimal('1000.00'),
                 interes=Decimal('20.00'),
                 monto_total=Decimal('1200.00'),
-                fecha_inicio=db.func.current_date(),
+                fecha_inicio=fecha_inicio1,
+                fecha_fin=fecha_inicio1 + text("INTERVAL '30 days'"),  # Añadir fecha_fin
                 saldo=Decimal('1200.00'),
                 tipo_prestamo='CR',
                 tipo_frecuencia='Diario',
@@ -430,12 +432,14 @@ def generar_datos_de_prueba():
             db.session.flush()
             
             # Préstamo pagado para cliente 2
+            fecha_inicio2 = db.func.current_date() - text("INTERVAL '30 days'")
             prestamo2 = Prestamo(
                 cliente_id=cliente2.id,
                 monto_principal=Decimal('500.00'),
                 interes=Decimal('15.00'),
                 monto_total=Decimal('575.00'),
-                fecha_inicio=db.func.current_date() - text("INTERVAL '30 days'"),
+                fecha_inicio=fecha_inicio2,
+                fecha_fin=fecha_inicio2 + text("INTERVAL '30 days'"),  # Añadir fecha_fin
                 saldo=Decimal('0.00'),
                 tipo_prestamo='CR',
                 tipo_frecuencia='Diario',

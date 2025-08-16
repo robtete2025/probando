@@ -425,7 +425,7 @@ function abrirModalRefinanciar(prestamoId) {
     document.getElementById('refinanciarModal').style.display = 'block';
     document.getElementById('refinanciarForm').reset();
     document.getElementById('refinanciarPrestamoId').value = prestamoId;
-    
+    document.getElementById('refinanciarCuotaDiariaDisplay').textContent = 'S/ 0.00'; // Resetear display
     cargarInfoPrestamoRefinanciar(prestamoId);
 }
 
@@ -497,26 +497,29 @@ async function calcularCuotaSugerida(prestamoId) {
             const buttons = row.querySelectorAll('button[onclick*="abrirModalCuota"]');
             for (let button of buttons) {
                 if (button.onclick.toString().includes(prestamoId)) {
-                    const deudaVencidaText = row.querySelector('.deuda-vencida')?.textContent || 'S/ 0.00';
+                    const cells = row.querySelectorAll('td');
+                    const deudaVencidaText = cells[12]?.textContent || 'S/ 0.00';
                     const deudaVencida = parseFloat(deudaVencidaText.replace('S/ ', ''));
+                    const montoTotalText = cells[6]?.textContent || 'S/ 0.00';
+                    const montoTotal = parseFloat(montoTotalText.replace('S/ ', ''));
+                    const cuotaDiariaText = cells[13]?.textContent || 'S/ 0.00';
+                    const cuotaDiaria = parseFloat(cuotaDiariaText.replace('S/ ', ''));
+                    
+                    // Limitar deuda_vencida a monto_total
+                    const deudaVencidaLimitada = Math.min(deudaVencida, montoTotal);
                     
                     const cuotaInput = document.getElementById('cuotaMonto');
                     const sugerenciaDiv = document.getElementById('cuotaSugerencia');
                     
-                    if (deudaVencida > 0) {
-                        cuotaInput.placeholder = `Sugerido: S/ ${deudaVencida.toFixed(2)}`;
+                    if (deudaVencidaLimitada > 0) {
+                        cuotaInput.placeholder = `Sugerido: S/ ${deudaVencidaLimitada.toFixed(2)}`;
                         sugerenciaDiv.innerHTML = `
                             <i class="fas fa-exclamation-triangle"></i>
-                            Deuda vencida: ${formatearMoneda(deudaVencida)} - Se sugiere pagar esta cantidad para ponerse al día.
+                            Deuda vencida: ${formatearMoneda(deudaVencidaLimitada)} (limitada al monto total de ${formatearMoneda(montoTotal)}) - Se sugiere pagar esta cantidad para ponerse al día.
                         `;
                         sugerenciaDiv.className = 'sugerencia-alerta';
-                        cuotaInput.value = deudaVencida.toFixed(2);
+                        cuotaInput.value = deudaVencidaLimitada.toFixed(2);
                     } else {
-                        // Obtener cuota diaria sugerida
-                        const cells = row.querySelectorAll('td');
-                        const cuotaDiariaText = cells[13]?.textContent || 'S/ 0.00';
-                        const cuotaDiaria = parseFloat(cuotaDiariaText.replace('S/ ', ''));
-                        
                         cuotaInput.placeholder = `Cuota diaria: S/ ${cuotaDiaria.toFixed(2)}`;
                         sugerenciaDiv.innerHTML = `
                             <i class="fas fa-info-circle"></i>
@@ -531,13 +534,18 @@ async function calcularCuotaSugerida(prestamoId) {
         }
     } catch (error) {
         console.error('Error calculando cuota sugerida:', error);
+        const sugerenciaDiv = document.getElementById('cuotaSugerencia');
+        sugerenciaDiv.innerHTML = `
+            <i class="fas fa-exclamation-circle"></i>
+            Error al calcular la cuota sugerida.
+        `;
+        sugerenciaDiv.className = 'sugerencia-error';
     }
 }
 
 async function cargarInfoPrestamoRefinanciar(prestamoId) {
     try {
         const rows = document.querySelectorAll('#clientesTableAdmin tbody tr');
-        
         for (let row of rows) {
             const buttons = row.querySelectorAll('button[onclick*="abrirModalRefinanciar"]');
             for (let button of buttons) {
@@ -547,15 +555,8 @@ async function cargarInfoPrestamoRefinanciar(prestamoId) {
                     const saldoPendiente = parseFloat(saldoText.replace('S/ ', ''));
                     
                     document.getElementById('saldoPendienteRefinanciar').textContent = formatearMoneda(saldoPendiente);
-                    document.getElementById('refinanciarInteres').value = '20';
-                    
-                    // Sugerir nueva cuota diaria (20% más alta que la actual)
-                    const cuotaActualText = cells[13]?.textContent || 'S/ 0.00';
-                    const cuotaActual = parseFloat(cuotaActualText.replace('S/ ', ''));
-                    const nuevaCuotaSugerida = Math.ceil(cuotaActual * 1.2);
-                    
-                    document.getElementById('refinanciarCuotaDiaria').value = nuevaCuotaSugerida;
-                    
+                    document.getElementById('refinanciarInteres').value = '';
+                    actualizarRefinanciarCuotaDiaria();
                     return;
                 }
             }
@@ -574,6 +575,7 @@ function actualizarMontoTotal() {
     if (montoTotalDisplay) {
         montoTotalDisplay.textContent = formatearMoneda(montoTotal);
     }
+    actualizarCuotaDiaria();
 }
 
 function actualizarNuevoMontoTotal() {
@@ -585,6 +587,7 @@ function actualizarNuevoMontoTotal() {
     if (montoTotalDisplay) {
         montoTotalDisplay.textContent = formatearMoneda(montoTotal);
     }
+    actualizarNuevoCuotaDiaria();
 }
 
 // Funciones de modal para trabajadores
@@ -1076,7 +1079,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     monto: parseFloat(document.getElementById('prestamoMontoInput').value),
                     interes: parseFloat(document.getElementById('prestamoInteresInput').value),
                     tipo_frecuencia: document.getElementById('prestamoTipoInput').value,
-                    cuota: parseFloat(document.getElementById('prestamoCuotaInput').value),
                     fecha_inicio: document.getElementById('prestamoFechaInicioInput').value
                 };
 
@@ -1136,7 +1138,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     monto: parseFloat(document.getElementById('nuevoPrestamoMonto').value),
                     interes: parseFloat(document.getElementById('nuevoPrestamoInteres').value),
                     tipo_frecuencia: document.getElementById('nuevoPrestamoTipo').value,
-                    cuota_diaria: parseFloat(document.getElementById('nuevoPrestamoCuota').value),
                     fecha_inicio: document.getElementById('nuevoPrestamoFechaInicio').value
                 };
 
@@ -1239,7 +1240,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 e.preventDefault();
                 const prestamoId = document.getElementById('refinanciarPrestamoId').value;
                 const interes = parseFloat(document.getElementById('refinanciarInteres').value);
-                const cuota_diaria = parseFloat(document.getElementById('refinanciarCuotaDiaria').value);
 
                 if (!confirm('¿Estás seguro de refinanciar este préstamo? Esta acción marcará el préstamo original como refinanciado.')) {
                     return;
@@ -1247,8 +1247,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 try {
                     const { res, data } = await fetchJSON(`/api/prestamos/${prestamoId}/refinanciar`, 'POST', { 
-                        interes, 
-                        cuota_diaria 
+                        interes 
                     });
 
                     if (res.ok) {
@@ -1264,8 +1263,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     alert('Error de conexión al servidor.');
                 }
             });
+            // Event listener para actualizar cuota diaria al cambiar el interés
+            // Event listener para actualizar cuota diaria al cambiar el interés
+    document.getElementById('refinanciarInteres').addEventListener('input', actualizarRefinanciarCuotaDiaria);
         }
     }
+        
 
     // CONFIGURACIÓN PARA PÁGINA DE TRABAJADOR
     if (currentPath === '/trabajador') {
@@ -1341,6 +1344,53 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     console.log(`Aplicación inicializada correctamente para rol: ${rol}`);
 });
+
+function actualizarCuotaDiaria() {
+    const montoPrincipal = parseFloat(document.getElementById('prestamoMontoInput')?.value || 0);
+    const interes = parseFloat(document.getElementById('prestamoInteresInput')?.value || 0);
+    const montoTotal = calcularMontoTotal(montoPrincipal, interes);
+    const cuotaDiaria = montoTotal / 22;
+    const cuotaDiariaDisplay = document.getElementById('cuotaDiariaDisplay');
+    if (cuotaDiariaDisplay) {
+        cuotaDiariaDisplay.textContent = formatearMoneda(cuotaDiaria);
+    }
+    // Actualiza también el monto total
+    const montoTotalDisplay = document.getElementById('montoTotalDisplay');
+    if (montoTotalDisplay) {
+        montoTotalDisplay.textContent = formatearMoneda(montoTotal);
+    }
+}
+
+function actualizarNuevoCuotaDiaria() {
+    const montoPrincipal = parseFloat(document.getElementById('nuevoPrestamoMonto')?.value || 0);
+    const interes = parseFloat(document.getElementById('nuevoPrestamoInteres')?.value || 0);
+    const montoTotal = calcularMontoTotal(montoPrincipal, interes);
+    const cuotaDiaria = montoTotal / 22;
+    const cuotaDiariaDisplay = document.getElementById('nuevoCuotaDiariaDisplay');
+    if (cuotaDiariaDisplay) {
+        cuotaDiariaDisplay.textContent = formatearMoneda(cuotaDiaria);
+    }
+}
+
+// Función para actualizar la cuota diaria en el modal de refinanciamiento
+function actualizarRefinanciarCuotaDiaria() {
+    const saldoPendienteElement = document.getElementById('saldoPendienteRefinanciar');
+    const interes = parseFloat(document.getElementById('refinanciarInteres')?.value || 0);
+    
+    // Extraer el saldo pendiente del texto (eliminar "S/ " y convertir a número)
+    const saldoPendienteText = saldoPendienteElement?.textContent || '0.00';
+    const saldoPendiente = parseFloat(saldoPendienteText.replace('S/ ', '').replace(',', '')) || 0;
+    
+    // Calcular monto total y cuota diaria
+    const montoTotal = calcularMontoTotal(saldoPendiente, interes);
+    const cuotaDiaria = montoTotal / 22;
+    
+    // Actualizar el display de la cuota diaria
+    const cuotaDiariaDisplay = document.getElementById('refinanciarCuotaDiariaDisplay');
+    if (cuotaDiariaDisplay) {
+        cuotaDiariaDisplay.textContent = formatearMoneda(cuotaDiaria);
+    }
+}
 
 // FUNCIONES GLOBALES ADICIONALES
 window.addEventListener('error', function(event) {
