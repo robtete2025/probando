@@ -1045,3 +1045,27 @@ select:focus-visible {
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
+
+/*PROBAR*/
+/* Aplicar estilos solo a tablas fuera de modales */
+.tab-content tbody tr:nth-child(even) {
+  background-color: #262626;
+}
+
+.tab-content tbody tr:hover {
+  background-color: #333;
+}
+
+/* Estilos elegantes para tablas dentro de modales */
+#historialCuotasModal tbody tr {
+  background-color: #ffffff !important;
+  color: #333 !important;
+}
+
+#historialCuotasModal tbody tr:nth-child(even) {
+  background-color: #f8f8f8 !important;
+}
+
+#historialCuotasModal tbody tr:hover {
+  background-color: #e0e0e0 !important;
+}

@@ -322,14 +322,14 @@ async function cargarTrabajadoresAdmin() {
         const { res, data } = await fetchJSON('/api/trabajadores');
         if (!res.ok) {
             console.error('Error al cargar trabajadores:', data?.msg || res.statusText);
-            tBody.innerHTML = '<tr><td colspan="4">Error al cargar trabajadores.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="5">Error al cargar trabajadores.</td></tr>';
             return;
         }
 
         tBody.innerHTML = '';
         
         if (data.length === 0) {
-            tBody.innerHTML = '<tr><td colspan="4" class="text-center">No hay trabajadores registrados.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="5" class="text-center">No hay trabajadores registrados.</td></tr>';
             return;
         }
 
@@ -337,10 +337,11 @@ async function cargarTrabajadoresAdmin() {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${t.username}</td>
+                <td>${t.nombre || 'N/A'}</td> <!-- Nueva columna para nombre -->
                 <td>${t.dni || 'N/A'}</td>
                 <td>${t.telefono || 'N/A'}</td>
                 <td>
-                    <button class="action-btn" onclick="abrirModal(${t.id}, '${t.username}', '${t.dni || ''}', '${t.telefono || ''}')" title="Editar">
+                    <button class="action-btn" onclick="abrirModal(${t.id}, '${t.username}', '${t.dni || ''}', '${t.telefono || ''}', '${t.nombre || ''}')" title="Editar">
                         <i class="fas fa-edit"></i>
                     </button>
                     <button class="action-btn delete-btn" onclick="eliminarTrabajador(${t.id})" title="Eliminar">
@@ -352,7 +353,7 @@ async function cargarTrabajadoresAdmin() {
         });
     } catch (error) {
         console.error('Error al cargar trabajadores:', error);
-        tBody.innerHTML = '<tr><td colspan="4">Error de conexión al servidor.</td></tr>';
+        tBody.innerHTML = '<tr><td colspan="5">Error de conexión al servidor.</td></tr>';
     }
 }
 
@@ -366,7 +367,8 @@ async function cargarResumenCreditos() {
                 'creditosVigentes': document.getElementById('creditosVigentes'),
                 'creditosVencidos': document.getElementById('creditosVencidos'),
                 'deudaTotal': document.getElementById('deudaTotal'),
-                'deudaVencidaTotal': document.getElementById('deudaVencidaTotal')
+                'deudaVencidaTotal': document.getElementById('deudaVencidaTotal'),
+                'gastosAdministrativosTotal': document.getElementById('gastosAdministrativosTotal')
             };
 
             // Elementos para trabajador (mismos IDs con sufijo)
@@ -380,7 +382,7 @@ async function cargarResumenCreditos() {
             // Actualizar elementos de admin
             Object.keys(elementos).forEach(key => {
                 if (elementos[key]) {
-                    if (key.includes('deuda')) {
+                    if (key.includes('deuda') || key.includes('gastos')) {
                         elementos[key].textContent = formatearMoneda(data[key] || 0);
                     } else {
                         elementos[key].textContent = data[key] || 0;
@@ -391,7 +393,7 @@ async function cargarResumenCreditos() {
             // Actualizar elementos de trabajador
             Object.keys(elementosTrabajador).forEach(key => {
                 if (elementosTrabajador[key]) {
-                    if (key.includes('deuda')) {
+                    if (key.includes('deuda') || key.includes('gastos')) {
                         elementosTrabajador[key].textContent = formatearMoneda(data.deudaTotal || 0);
                     } else {
                         elementosTrabajador[key].textContent = data[key] || 0;
@@ -591,9 +593,10 @@ function actualizarNuevoMontoTotal() {
 }
 
 // Funciones de modal para trabajadores
-function abrirModal(id = null, username = '', dni = '', telefono = '') {
+function abrirModal(id = null, username = '', dni = '', telefono = '', nombre = '') {
     document.getElementById('workerId').value = id || '';
     document.getElementById('usernameInput').value = username;
+    document.getElementById('nombreInput').value = nombre; // Nuevo campo
     document.getElementById('dniInput').value = dni;
     document.getElementById('telefonoInput').value = telefono;
 
@@ -861,13 +864,16 @@ function filtrarTrabajadores(searchText) {
 
     for (let i = 1; i < rows.length; i++) {
         const username = rows[i].getElementsByTagName('td')[0];
+        const nombre = rows[i].getElementsByTagName('td')[1]; // Nueva columna para nombre
         const dni = rows[i].getElementsByTagName('td')[1];
 
-        if (username && dni) {
+        if (username && nombre && dni) {
             const usernameText = username.textContent || username.innerText;
+            const nombreText = nombre.textContent || nombre.innerText;
             const dniText = dni.textContent || dni.innerText;
 
             if (usernameText.toLowerCase().indexOf(filter) > -1 || 
+                nombreText.toLowerCase().indexOf(filter) > -1 || // Incluir nombre en la búsqueda
                 dniText.toLowerCase().indexOf(filter) > -1) {
                 rows[i].style.display = "";
             } else {
@@ -976,7 +982,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const bienvenida = document.getElementById('bienvenida');
-    if (bienvenida) bienvenida.textContent = 'Bienvenido, ' + (rol || 'Usuario');
+    // Obtener datos del usuario autenticado
+    try {
+        const response = await fetch('/api/usuario', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+                // El token JWT se envía automáticamente en la cookie gracias a flask_jwt_extended
+            },
+            credentials: 'include' // Necesario para enviar la cookie JWT
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            const nombreUsuario = data.nombre || data.username || 'Usuario';
+            const rolUsuario = data.rol ? data.rol.charAt(0).toUpperCase() + data.rol.slice(1) : 'Usuario';
+            if (bienvenida) {
+                bienvenida.textContent = `Bienvenido, ${rolUsuario} ${nombreUsuario}`;
+            }
+        } else {
+            console.error('Error al obtener datos del usuario:', data.msg);
+            if (bienvenida) {
+                bienvenida.textContent = 'Bienvenido, Usuario';
+            }
+        }
+    } catch (error) {
+        console.error('Error de conexión al obtener datos del usuario:', error);
+        if (bienvenida) {
+            bienvenida.textContent = 'Bienvenido, Usuario';
+        }
+    }
 
     resetInactivityTimer();
 
@@ -1011,6 +1047,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 e.preventDefault();
                 const id = document.getElementById('workerId').value;
                 const username = document.getElementById('usernameInput').value;
+                const nombre = document.getElementById('nombreInput').value; // Nuevo campo
                 const dni = document.getElementById('dniInput').value;
                 const telefono = document.getElementById('telefonoInput').value;
                 const password = document.getElementById('passwordInput').value;
@@ -1021,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 try {
                     if (id) {
-                        const body = { username, dni, telefono };
+                        const body = { username, nombre, dni, telefono };
                         if (password) body.password = password;
                         const { res, data } = await fetchJSON(`/api/trabajadores/${id}`, 'PUT', body);
                         
@@ -1033,7 +1070,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     } else {
                         const { res, data } = await fetchJSON('/api/trabajadores', 'POST', { 
-                            username, password, dni, telefono 
+                            username, password, nombre, dni, telefono 
                         });
                         
                         if (res.ok) {

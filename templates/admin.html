@@ -25,6 +25,7 @@
             <div>Créditos Vencidos: <span id="creditosVencidos">0</span></div>
             <div>Deuda Total: <span id="deudaTotal">S/ 0.00</span></div>
             <div>Deuda Vencida: <span id="deudaVencidaTotal">S/ 0.00</span></div>
+            <div>Gastos Administrativos: <span id="gastosAdministrativosTotal">S/ 0.00</span></div>
         </div>
     </section>
 
@@ -86,13 +87,14 @@
             <button onclick="agregarTrabajador()">
                 <i class="fas fa-user-tie"></i> Añadir Trabajador
             </button>
-            <input type="text" id="buscarTrabajadorAdmin" placeholder="Buscar trabajador (usuario o DNI)" oninput="filtrarTrabajadores(this.value)" />
+            <input type="text" id="buscarTrabajadorAdmin" placeholder="Buscar trabajador (usuario, nombre o DNI)" oninput="filtrarTrabajadores(this.value)" />
         </div>
         <div class="table-container">
             <table id="trabajadoresTableAdmin">
                 <thead>
                     <tr>
                         <th>Usuario</th>
+                        <th>Nombre</th> <!-- Nueva columna para nombre -->
                         <th>DNI</th>
                         <th>Teléfono</th>
                         <th>Acciones</th>
@@ -268,6 +270,9 @@
                 <label for="usernameInput">Usuario *:</label>
                 <input type="text" id="usernameInput" required />
                 
+                <label for="nombreInput">Nombre completo *:</label> <!-- Nuevo campo -->
+                <input type="text" id="nombreInput" required />
+
                 <label for="dniInput">DNI:</label>
                 <input type="text" id="dniInput" />
                 

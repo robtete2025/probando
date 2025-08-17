@@ -298,7 +298,8 @@ def crear_usuarios_por_defecto():
                     password_hash=pw_hash, 
                     rol='admin',
                     dni='12345678',
-                    telefono='999999999'
+                    telefono='999999999',
+                    nombre='Juan Pérez'  # Agregar nombre
                 )
                 db.session.add(admin)
                 print('Usuario administrador creado.')
@@ -314,7 +315,8 @@ def crear_usuarios_por_defecto():
                     password_hash=pw_hash, 
                     rol='trabajador',
                     dni='87654321',
-                    telefono='888888888'
+                    telefono='888888888',
+                    nombre='María López'  # Agregar nombre
                 )
                 db.session.add(trabajador)
                 print('Usuario trabajador creado.')

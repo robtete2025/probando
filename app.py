@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import (
     JWTManager, create_access_token, set_access_cookies, unset_jwt_cookies,
-    verify_jwt_in_request, get_jwt, jwt_required
+    verify_jwt_in_request, get_jwt, get_jwt_identity, jwt_required
 )
 from datetime import timedelta, datetime, timezone, date
 import os
@@ -62,6 +62,7 @@ class Usuario(db.Model):
     rol = db.Column(db.String(20), nullable=False)
     dni = db.Column(db.String(15), unique=True, nullable=True)
     telefono = db.Column(db.String(20), nullable=True)
+    nombre = db.Column(db.String(100), nullable=True)  # Nuevo campo
 
 
 class Cliente(db.Model):
@@ -190,6 +191,14 @@ class Prestamo(db.Model):
                 return 'a_tiempo'
             else:
                 return 'con_retraso'
+        
+    def calcular_gastos_administrativos(self):
+        """Calcula los gastos administrativos: 1 sol por cada 50 soles de monto principal, mínimo 1 sol."""
+        monto_principal = Decimal(str(self.monto_principal))
+        if monto_principal <= 0:
+            return Decimal('0.0')  # Mínimo 1 sol
+        gastos = Decimal('0.0') + (monto_principal // 50) * Decimal('1.0')
+        return gastos
 
     def to_dict(self):
         self.calcular_dias_transcurridos()
@@ -213,7 +222,8 @@ class Prestamo(db.Model):
             'deuda_vencida': float(self.deuda_vencida),
             'prestamo_refinanciado_id': self.prestamo_refinanciado_id,
             'total_cuotas': len(self.cuotas),
-            'cuotas': [c.to_dict() for c in self.cuotas]
+            'cuotas': [c.to_dict() for c in self.cuotas],
+            'gastos_administrativos': float(self.calcular_gastos_administrativos())  # Nuevo campo
         }
 
 
@@ -349,6 +359,27 @@ def actualizar_prestamos_activos():
 
 
 # ---------------- API ENDPOINTS ----------------
+
+@app.route('/api/usuario', methods=['GET'])
+@jwt_required()
+def obtener_usuario():
+    try:
+        username = get_jwt_identity()
+        usuario = Usuario.query.filter_by(username=username).first()
+        
+        if not usuario:
+            return jsonify({'msg': 'Usuario no encontrado'}), 404
+        
+        return jsonify({
+            'username': usuario.username,
+            'nombre': usuario.nombre or usuario.username,  # Usa nombre si existe, sino username
+            'rol': usuario.rol,
+            'dni': usuario.dni,
+            'telefono': usuario.telefono
+        }), 200
+    except Exception as e:
+        print(f"Error obteniendo usuario: {e}")
+        return jsonify({'msg': 'Error al obtener datos del usuario'}), 500
 
 @app.route('/api/clientes_con_prestamo', methods=['POST'])
 @jwt_required()
@@ -519,7 +550,8 @@ def api_trabajadores():
             'username': t.username,
             'rol': t.rol,
             'dni': t.dni,
-            'telefono': t.telefono
+            'telefono': t.telefono,
+            'nombre': t.nombre  # Incluir nombre en la respuesta
         } for t in trabajadores
     ]), 200
 
@@ -537,14 +569,24 @@ def api_crear_trabajador():
     password = data.get('password')
     dni = data.get('dni')
     telefono = data.get('telefono')
+    nombre = data.get('nombre')  # Nuevo campo
 
-    if not username or not password:
+    if not username or not password or not nombre:
         return jsonify({'msg': 'Faltan campos'}), 400
     if Usuario.query.filter_by(username=username).first():
         return jsonify({'msg': 'Usuario ya existe'}), 400
+    if Usuario.query.filter_by(dni=dni).first():
+        return jsonify({'msg': 'DNI ya registrado'}), 400
 
     pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')
-    trabajador = Usuario(username=username, password_hash=pw_hash, rol='trabajador', dni=dni, telefono=telefono)
+    trabajador = Usuario(
+        username=username, 
+        password_hash=pw_hash, 
+        rol='trabajador', 
+        dni=dni, 
+        telefono=telefono,
+        nombre=nombre  # Asignar nombre
+    )
     db.session.add(trabajador)
     db.session.commit()
 
@@ -553,7 +595,8 @@ def api_crear_trabajador():
         'username': trabajador.username, 
         'rol': trabajador.rol, 
         'dni': trabajador.dni,
-        'telefono': trabajador.telefono
+        'telefono': trabajador.telefono,
+        'nombre': trabajador.nombre  # Incluir nombre en la respuesta
     }), 201
 
 
@@ -571,6 +614,7 @@ def api_editar_trabajador(id):
     trabajador.username = data.get('username', trabajador.username)
     trabajador.dni = data.get('dni', trabajador.dni)
     trabajador.telefono = data.get('telefono', trabajador.telefono)
+    trabajador.nombre = data.get('nombre', trabajador.nombre)  # Actualizar nombre
 
     nueva_password = data.get('password')
     if nueva_password:
@@ -582,7 +626,8 @@ def api_editar_trabajador(id):
         'username': trabajador.username,
         'rol': trabajador.rol,
         'dni': trabajador.dni,
-        'telefono': trabajador.telefono
+        'telefono': trabajador.telefono,
+        'nombre': trabajador.nombre  # Incluir nombre en la respuesta
     }), 200
 
 
@@ -633,6 +678,12 @@ def resumen_creditos():
     if deuda_vencida_total is None:
         deuda_vencida_total = 0.0
 
+    # Total de gastos administrativos (solo préstamos activos y vencidos)
+    gastos_administrativos_total = sum(
+        prestamo.calcular_gastos_administrativos() 
+        for prestamo in Prestamo.query.filter(Prestamo.estado.in_(['activo', 'vencido'])).all()
+    )
+
     return jsonify({
         'totalCreditos': total_creditos,
         'creditosVigentes': creditos_vigentes,
@@ -640,7 +691,8 @@ def resumen_creditos():
         'creditosPagados': creditos_pagados,
         'creditosRefinanciados': creditos_refinanciados,
         'deudaTotal': float(deuda_total),
-        'deudaVencidaTotal': float(deuda_vencida_total)
+        'deudaVencidaTotal': float(deuda_vencida_total),
+        'gastosAdministrativosTotal': float(gastos_administrativos_total)  # Nuevo campo
     })
 
 
