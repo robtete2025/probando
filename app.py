@@ -681,7 +681,7 @@ def resumen_creditos():
     # Total de gastos administrativos (solo préstamos activos y vencidos)
     gastos_administrativos_total = sum(
         prestamo.calcular_gastos_administrativos() 
-        for prestamo in Prestamo.query.filter(Prestamo.estado.in_(['activo', 'vencido'])).all()
+        for prestamo in Prestamo.query.all() 
     )
 
     return jsonify({
