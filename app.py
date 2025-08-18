@@ -342,7 +342,7 @@ def calcular_dias_habiles(fecha_inicio, fecha_fin):
     dias = 0
     current_date = fecha_inicio
     while current_date <= fecha_fin and dias < 22:
-        if current_date.weekday() < 5:  # Lunes a viernes (0 a 4)
+        if current_date.weekday() < 6:  # Lunes a viernes (0 a 4)
             dias += 1
         current_date += timedelta(days=1)
     return dias
@@ -459,7 +459,7 @@ def marcar_prestamo_pagado(prestamo_id):
         if claims.get('rol') != 'admin':
             return jsonify({'msg': 'No autorizado'}), 403
 
-        prestamo = Prestamo.query.get(prestamo_id)
+        prestamo = db.session.get(Prestamo, prestamo_id)
         if not prestamo:
             return jsonify({'msg': 'Préstamo no encontrado'}), 404
 
@@ -469,7 +469,7 @@ def marcar_prestamo_pagado(prestamo_id):
         prestamo.fecha_pago_completo = get_current_date()
         
         if prestamo.tipo_prestamo == 'REF' and prestamo.prestamo_refinanciado_id:
-            prestamo_original = Prestamo.query.get(prestamo.prestamo_refinanciado_id)
+            prestamo_original = db.session.get(Prestamo, prestamo.prestamo_refinanciado_id)
             if prestamo_original:
                 prestamo_original.estado = 'pagado'
                 prestamo_original.saldo = Decimal('0.0')
@@ -496,7 +496,7 @@ def api_create_prestamo():
     if not all(k in data for k in required):
         return jsonify({'msg': 'Faltan campos requeridos'}), 400
     
-    cliente = Cliente.query.get(data['cliente_id'])
+    cliente = db.session.get(Cliente, data['cliente_id'])
     if not cliente:
         return jsonify({'msg': 'Cliente no existe'}), 404
     
@@ -608,7 +608,9 @@ def api_editar_trabajador(id):
     if claims.get('rol') != 'admin':
         return jsonify({'msg': 'No autorizado'}), 403
 
-    trabajador = Usuario.query.get_or_404(id)
+    trabajador = db.session.get(Usuario, id)
+    if not trabajador:
+        return jsonify({'msg': 'Trabajador no encontrado'}), 404
     data = request.get_json() or {}
 
     trabajador.username = data.get('username', trabajador.username)
@@ -639,7 +641,9 @@ def api_eliminar_trabajador(id):
     if claims.get('rol') != 'admin':
         return jsonify({'msg': 'No autorizado'}), 403
 
-    trabajador = Usuario.query.get_or_404(id)
+    trabajador = db.session.get(Usuario, id)
+    if not trabajador:
+        return jsonify({'msg': 'Trabajador no encontrado'}), 404
     db.session.delete(trabajador)
     db.session.commit()
 
@@ -879,7 +883,9 @@ def api_historial_prestamos(cliente_id):
     if claims.get('rol') not in ['admin', 'trabajador']:
         return jsonify({'msg': 'No autorizado'}), 403
 
-    cliente = Cliente.query.get_or_404(cliente_id)
+    cliente = db.session.get(Cliente, cliente_id)
+    if not cliente:
+        return jsonify({'msg': 'Cliente no encontrado'}), 404
     prestamos = Prestamo.query.filter_by(cliente_id=cliente_id).order_by(Prestamo.fecha_inicio.desc()).all()
     
     # Actualizar información de préstamos
@@ -899,7 +905,9 @@ def api_update_cliente(id):
     if claims.get('rol') != 'admin':
         return jsonify({'msg': 'No autorizado'}), 403
     
-    cliente = Cliente.query.get_or_404(id)
+    cliente = db.session.get(Cliente, id)
+    if not cliente:
+        return jsonify({'msg': 'Cliente no encontrado'}), 404
     data = request.get_json() or {}
     
     cliente.nombre = data.get('nombre', cliente.nombre)
@@ -918,7 +926,7 @@ def eliminar_cliente(cliente_id):
     if claims.get('rol') != 'admin':
         return jsonify({'msg': 'No autorizado'}), 403
 
-    cliente = Cliente.query.get(cliente_id)
+    cliente = db.session.get(Cliente, cliente_id)
     if not cliente:
         return jsonify({'msg': 'Cliente no encontrado'}), 404
 
@@ -944,7 +952,9 @@ def registrar_cuota(prestamo_id):
     if claims.get('rol') not in ['admin', 'trabajador']:
         return jsonify({'msg': 'No autorizado'}), 403
 
-    prestamo = Prestamo.query.get_or_404(prestamo_id)
+    prestamo = db.session.get(Prestamo, prestamo_id)
+    if not prestamo:
+        return jsonify({'msg': 'Préstamo no encontrado'}), 404
     data = request.get_json() or {}
     monto_cuota = data.get('monto')
 
@@ -1009,7 +1019,9 @@ def refinanciar_prestamo(prestamo_id):
     if claims.get('rol') != 'admin':
         return jsonify({'msg': 'No autorizado'}), 403
 
-    prestamo_original = Prestamo.query.get_or_404(prestamo_id)
+    prestamo_original = db.session.get(Prestamo, prestamo_id)
+    if not prestamo_original:
+        return jsonify({'msg': 'Préstamo no encontrado'}), 404
     
     if prestamo_original.estado not in ['activo', 'vencido']:
         return jsonify({'msg': 'Solo se pueden refinanciar préstamos activos o vencidos'}), 400
