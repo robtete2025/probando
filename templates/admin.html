@@ -25,7 +25,7 @@
             <div>Créditos Vencidos: <span id="creditosVencidos">0</span></div>
             <div>Deuda Total: <span id="deudaTotal">S/ 0.00</span></div>
             <div>Deuda Vencida: <span id="deudaVencidaTotal">S/ 0.00</span></div>
-            <div>Gastos Administrativos: <span id="gastosAdministrativosTotal">S/ 0.00</span></div>
+            <div>Ingresos Administrativos: <span id="gastosAdministrativosTotal">S/ 0.00</span></div>
         </div>
     </section>
 
@@ -60,6 +60,7 @@
                         <th>Nombre</th>
                         <th>Dirección</th>
                         <th>Teléfono</th>
+                        <th>Asesor</th>
                         <th>Monto Principal</th>
                         <th>Monto Total</th>
                         <th>Saldo</th>
@@ -155,6 +156,12 @@
 
                 <label for="clienteTelefonoInput">Teléfono:</label>
                 <input type="text" id="clienteTelefonoInput" />
+
+                <label for="clienteTrabajadorInput">Trabajador Asignado:</label>
+                <select id="clienteTrabajadorInput">
+                    <option value="">Seleccione un trabajador</option>
+                    <!-- Se carga dinámicamente -->
+                </select>
 
                 <h3>Datos del Préstamo Inicial</h3>
                 <label for="prestamoMontoInput">Monto Principal (S/) *:</label>
@@ -253,6 +260,12 @@
 
                 <label for="editClienteTelefono">Teléfono:</label>
                 <input type="text" id="editClienteTelefono" />
+
+                <label for="editClienteTrabajador">Trabajador Asignado:</label>
+                <select id="editClienteTrabajador">
+                    <option value="">Seleccione un trabajador</option>
+                    <!-- Se carga dinámicamente -->
+                </select>
 
                 <button type="submit">Actualizar Cliente</button>
             </form>

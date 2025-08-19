@@ -11,6 +11,20 @@ def agregar_columnas_faltantes():
     with app.app_context():
         try:
             inspector = inspect(db.engine)
+
+            # Verificar columnas de clientes
+            clientes_columns = [col['name'] for col in inspector.get_columns('clientes')]
+            
+            nuevas_columnas_clientes = []
+            if 'trabajador_id' not in clientes_columns:
+                nuevas_columnas_clientes.append('ADD COLUMN trabajador_id INTEGER REFERENCES usuarios(id)')
+            
+            if nuevas_columnas_clientes:
+                print(f"Agregando {len(nuevas_columnas_clientes)} columnas a la tabla clientes...")
+                with db.engine.connect() as connection:
+                    connection.execute(text(f"ALTER TABLE clientes {', '.join(nuevas_columnas_clientes)}"))
+                    connection.commit()
+                print("Columnas agregadas exitosamente a clientes.")
             
             # Verificar columnas de prestamos
             prestamos_columns = [col['name'] for col in inspector.get_columns('prestamos')]
@@ -38,10 +52,12 @@ def agregar_columnas_faltantes():
             if 'prestamo_refinanciado_id' not in prestamos_columns:
                 nuevas_columnas_prestamos.append('ADD COLUMN prestamo_refinanciado_id INTEGER REFERENCES prestamos(id)')
             
+
             if nuevas_columnas_prestamos:
                 print(f"Agregando {len(nuevas_columnas_prestamos)} columnas a la tabla prestamos...")
-                alter_query = f"ALTER TABLE prestamos {', '.join(nuevas_columnas_prestamos)}"
-                db.engine.execute(text(alter_query))
+                with db.engine.connect() as connection:  # Usar conexión explícita
+                    connection.execute(text(f"ALTER TABLE prestamos {', '.join(nuevas_columnas_prestamos)}"))
+                    connection.commit()  # Confirmar los cambios
                 print("Columnas agregadas exitosamente a prestamos.")
             
             # Verificar columnas de cuotas
@@ -50,19 +66,25 @@ def agregar_columnas_faltantes():
                 
                 if 'estado_pago' not in cuotas_columns:
                     print("Agregando columna estado_pago a la tabla cuotas...")
-                    db.engine.execute(text("ALTER TABLE cuotas ADD COLUMN estado_pago VARCHAR(20) DEFAULT 'a_tiempo'"))
+                    with db.engine.connect() as connection:
+                        connection.execute(text("ALTER TABLE cuotas ADD COLUMN estado_pago VARCHAR(20) DEFAULT 'a_tiempo'"))
+                        connection.commit()
                     print("Columna estado_pago agregada exitosamente.")
             
             # Migrar columnas antiguas si existen
             if 'tipo' in prestamos_columns and 'tipo_frecuencia' in prestamos_columns:
                 print("Migrando datos de columna 'tipo' a 'tipo_frecuencia'...")
-                db.engine.execute(text("UPDATE prestamos SET tipo_frecuencia = tipo WHERE tipo IS NOT NULL AND tipo_frecuencia IS NULL"))
-                db.engine.execute(text("ALTER TABLE prestamos DROP COLUMN IF EXISTS tipo"))
+                with db.engine.connect() as connection:
+                    connection.execute(text("UPDATE prestamos SET tipo_frecuencia = tipo WHERE tipo IS NOT NULL AND tipo_frecuencia IS NULL"))
+                    connection.execute(text("ALTER TABLE prestamos DROP COLUMN IF EXISTS tipo"))
+                    connection.commit()
                 
             if 'cuota' in prestamos_columns and 'cuota_diaria' in prestamos_columns:
                 print("Migrando datos de columna 'cuota' a 'cuota_diaria'...")
-                db.engine.execute(text("UPDATE prestamos SET cuota_diaria = cuota WHERE cuota IS NOT NULL AND cuota_diaria = 0"))
-                db.engine.execute(text("ALTER TABLE prestamos DROP COLUMN IF EXISTS cuota"))
+                with db.engine.connect() as connection:
+                    connection.execute(text("UPDATE prestamos SET cuota_diaria = cuota WHERE cuota IS NOT NULL AND cuota_diaria = 0"))
+                    connection.execute(text("ALTER TABLE prestamos DROP COLUMN IF EXISTS cuota"))
+                    connection.commit()
                 
         except Exception as e:
             print(f"Error agregando columnas faltantes: {e}")
@@ -110,15 +132,28 @@ def migrar_prestamos_al_nuevo_formato():
         try:
             print("Migrando préstamos al nuevo formato...")
             
-            # Obtener préstamos que necesitan migración
-            prestamos_query = text("""
-                SELECT id, monto, interes, monto_principal, monto_total, tipo_prestamo, tipo_frecuencia, cuota_diaria
-                FROM prestamos 
-                WHERE monto_principal IS NULL OR monto_total IS NULL
-            """)
+            # Verificar si la columna 'monto' existe
+            inspector = inspect(db.engine)
+            prestamos_columns = [col['name'] for col in inspector.get_columns('prestamos')]
+            has_monto = 'monto' in prestamos_columns
             
-            result = db.engine.execute(prestamos_query)
-            prestamos_a_migrar = result.fetchall()
+            # Ajustar la consulta según las columnas disponibles
+            if has_monto:
+                prestamos_query = text("""
+                    SELECT id, monto, interes, monto_principal, monto_total, tipo_prestamo, tipo_frecuencia, cuota_diaria
+                    FROM prestamos 
+                    WHERE monto_principal IS NULL OR monto_total IS NULL
+                """)
+            else:
+                prestamos_query = text("""
+                    SELECT id, monto_principal AS monto, interes, monto_principal, monto_total, tipo_prestamo, tipo_frecuencia, cuota_diaria
+                    FROM prestamos 
+                    WHERE monto_principal IS NULL OR monto_total IS NULL
+                """)
+            
+            with db.engine.connect() as connection:
+                result = connection.execute(prestamos_query)
+                prestamos_a_migrar = result.fetchall()
             
             if not prestamos_a_migrar:
                 print("No hay préstamos que necesiten migración.")
@@ -128,16 +163,16 @@ def migrar_prestamos_al_nuevo_formato():
             
             for prestamo in prestamos_a_migrar:
                 prestamo_id = prestamo[0]
-                monto = Decimal(str(prestamo[1])) if prestamo[1] else Decimal('0')
+                monto = Decimal(str(prestamo[1])) if has_monto and prestamo[1] else Decimal('0')
                 interes = Decimal(str(prestamo[2])) if prestamo[2] else Decimal('0')
                 
                 # Calcular monto principal y total
-                if prestamo[3] is None:  # monto_principal es None
-                    monto_principal = monto
+                if prestamo[3] is None:
+                    monto_principal = monto if has_monto else Decimal('0')
                 else:
                     monto_principal = Decimal(str(prestamo[3]))
                 
-                if prestamo[4] is None:  # monto_total es None
+                if prestamo[4] is None:
                     interes_monto = monto_principal * (interes / 100)
                     monto_total = monto_principal + interes_monto
                 else:
@@ -160,14 +195,16 @@ def migrar_prestamos_al_nuevo_formato():
                     WHERE id = :prestamo_id
                 """)
                 
-                db.engine.execute(update_query, {
-                    'prestamo_id': prestamo_id,
-                    'monto_principal': monto_principal,
-                    'monto_total': monto_total,
-                    'tipo_prestamo': tipo_prestamo,
-                    'tipo_frecuencia': tipo_frecuencia,
-                    'cuota_diaria': cuota_diaria
-                })
+                with db.engine.connect() as connection:
+                    connection.execute(update_query, {
+                        'prestamo_id': prestamo_id,
+                        'monto_principal': monto_principal,
+                        'monto_total': monto_total,
+                        'tipo_prestamo': tipo_prestamo,
+                        'tipo_frecuencia': tipo_frecuencia,
+                        'cuota_diaria': cuota_diaria
+                    })
+                    connection.commit()
             
             print(f"Migración de {len(prestamos_a_migrar)} préstamos completada.")
             
@@ -185,25 +222,28 @@ def migrar_pagos_a_cuotas():
     with app.app_context():
         try:
             # Verificar si hay pagos para migrar
-            result = db.engine.execute(text("SELECT COUNT(*) FROM pagos")).fetchone()
-            pagos_count = result[0] if result else 0
+            with db.engine.connect() as connection:
+                result = connection.execute(text("SELECT COUNT(*) FROM pagos")).fetchone()
+                pagos_count = result[0] if result else 0
             
             if pagos_count > 0:
                 print(f"Migrando {pagos_count} pagos a cuotas...")
                 
                 # Migrar pagos a cuotas evitando duplicados
-                db.engine.execute(text("""
-                    INSERT INTO cuotas (prestamo_id, monto, fecha_pago, descripcion, estado_pago)
-                    SELECT p.prestamo_id, p.monto, p.fecha_pago, 'Migrado desde pagos', 'a_tiempo'
-                    FROM pagos p
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM cuotas c
-                        WHERE c.prestamo_id = p.prestamo_id 
-                        AND c.monto = p.monto 
-                        AND c.fecha_pago = p.fecha_pago
-                        AND c.descripcion = 'Migrado desde pagos'
-                    )
-                """))
+                with db.engine.connect() as connection:
+                    connection.execute(text("""
+                        INSERT INTO cuotas (prestamo_id, monto, mora, fecha_pago, descripcion, estado_pago)
+                        SELECT p.prestamo_id, p.monto, p.fecha_pago, 'Migrado desde pagos', 'a_tiempo'
+                        FROM pagos p
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM cuotas c
+                            WHERE c.prestamo_id = p.prestamo_id 
+                            AND c.monto = p.monto 
+                            AND c.fecha_pago = p.fecha_pago
+                            AND c.descripcion = 'Migrado desde pagos'
+                        )
+                    """))
+                    connection.commit()
                 
                 print("Migración de pagos a cuotas completada.")
             else:
@@ -223,54 +263,55 @@ def actualizar_saldos_y_estados():
         try:
             print("Actualizando saldos y estados de préstamos...")
             
-            # Obtener todos los préstamos
             prestamos_query = text("""
                 SELECT id, monto_total, estado 
                 FROM prestamos 
                 WHERE monto_total IS NOT NULL
             """)
             
-            result = db.engine.execute(prestamos_query)
-            prestamos = result.fetchall()
+            with db.engine.connect() as connection:
+                result = connection.execute(prestamos_query)
+                prestamos = result.fetchall()
             
             for prestamo in prestamos:
                 prestamo_id = prestamo[0]
                 monto_total = Decimal(str(prestamo[1]))
                 estado_actual = prestamo[2]
                 
-                # Calcular total pagado en cuotas
                 cuotas_query = text("""
                     SELECT COALESCE(SUM(monto), 0) 
                     FROM cuotas 
                     WHERE prestamo_id = :prestamo_id
                 """)
                 
-                result_cuotas = db.engine.execute(cuotas_query, {'prestamo_id': prestamo_id})
-                total_pagado = Decimal(str(result_cuotas.fetchone()[0]))
+                with db.engine.connect() as connection:
+                    result_cuotas = connection.execute(cuotas_query, {'prestamo_id': prestamo_id})
+                    row = result_cuotas.fetchone()
+                    total_pagado = Decimal(str(row[0])) if row and row[0] is not None else Decimal('0')
                 
-                # Calcular nuevo saldo
                 nuevo_saldo = max(Decimal('0'), monto_total - total_pagado)
                 
-                # Determinar nuevo estado
                 if nuevo_saldo <= 0 and estado_actual in ['activo', 'vencido']:
                     nuevo_estado = 'pagado'
                 elif estado_actual == 'pagado' and nuevo_saldo > 0:
-                    nuevo_estado = 'activo'  # Reactivar si hay saldo pendiente
+                    nuevo_estado = 'activo'
                 else:
                     nuevo_estado = estado_actual
                 
-                # Actualizar préstamo
                 update_query = text("""
                     UPDATE prestamos 
-                    SET saldo = :saldo, estado = :estado
+                    SET saldo = :saldo, 
+                        estado = :estado
                     WHERE id = :prestamo_id
                 """)
                 
-                db.engine.execute(update_query, {
-                    'prestamo_id': prestamo_id,
-                    'saldo': nuevo_saldo,
-                    'estado': nuevo_estado
-                })
+                with db.engine.connect() as connection:
+                    connection.execute(update_query, {
+                        'prestamo_id': prestamo_id,
+                        'saldo': nuevo_saldo,
+                        'estado': nuevo_estado
+                    })
+                    connection.commit()
             
             print(f"Saldos y estados actualizados para {len(prestamos)} préstamos.")
             
@@ -279,7 +320,6 @@ def actualizar_saldos_y_estados():
             db.session.rollback()
             return False
         return True
-
 
 def crear_usuarios_por_defecto():
     """
@@ -345,34 +385,51 @@ def verificar_integridad_datos():
             print("Verificando integridad de datos...")
             
             # Verificar préstamos sin monto_total
-            result = db.engine.execute(text("""
-                SELECT COUNT(*) FROM prestamos 
-                WHERE monto_total IS NULL OR monto_total = 0
-            """)).fetchone()
-            
+            with db.engine.connect() as connection:
+                result = connection.execute(text("""
+                    SELECT COUNT(*) FROM prestamos 
+                    WHERE monto_total IS NULL OR monto_total = 0
+                """)).fetchone()
+                
             if result[0] > 0:
                 print(f"ADVERTENCIA: {result[0]} préstamos sin monto total válido.")
                 return False
             
             # Verificar préstamos con saldo negativo
-            result = db.engine.execute(text("""
-                SELECT COUNT(*) FROM prestamos 
-                WHERE saldo < 0
-            """)).fetchone()
-            
+            with db.engine.connect() as connection:
+                result = connection.execute(text("""
+                    SELECT COUNT(*) FROM prestamos 
+                    WHERE saldo < 0
+                """)).fetchone()
+                
             if result[0] > 0:
                 print(f"ADVERTENCIA: {result[0]} préstamos con saldo negativo. Corrigiendo...")
-                db.engine.execute(text("UPDATE prestamos SET saldo = 0 WHERE saldo < 0"))
+                with db.engine.connect() as connection:
+                    connection.execute(text("UPDATE prestamos SET saldo = 0 WHERE saldo < 0"))
+                    connection.commit()
             
             # Verificar cuotas huérfanas
-            result = db.engine.execute(text("""
-                SELECT COUNT(*) FROM cuotas c
-                LEFT JOIN prestamos p ON c.prestamo_id = p.id
-                WHERE p.id IS NULL
-            """)).fetchone()
-            
+            with db.engine.connect() as connection:
+                result = connection.execute(text("""
+                    SELECT COUNT(*) FROM cuotas c
+                    LEFT JOIN prestamos p ON c.prestamo_id = p.id
+                    WHERE p.id IS NULL
+                """)).fetchone()
+                
             if result[0] > 0:
                 print(f"ADVERTENCIA: {result[0]} cuotas sin préstamo asociado.")
+                return False
+            
+            # Verificar clientes con trabajador_id inválido
+            with db.engine.connect() as connection:
+                result = connection.execute(text("""
+                    SELECT COUNT(*) FROM clientes c
+                    LEFT JOIN usuarios u ON c.trabajador_id = u.id
+                    WHERE c.trabajador_id IS NOT NULL AND (u.id IS NULL OR u.rol != 'trabajador')
+                """)).fetchone()
+                
+            if result[0] > 0:
+                print(f"ADVERTENCIA: {result[0]} clientes con trabajador_id inválido.")
                 return False
             
             print("Verificación de integridad completada exitosamente.")
@@ -396,39 +453,56 @@ def generar_datos_de_prueba():
             
             print("Creando datos de prueba...")
             
+            # Obtener el ID del trabajador por defecto
+            trabajador = Usuario.query.filter_by(username='trabajador').first()
+            trabajador_id = trabajador.id if trabajador else None
+
             # Cliente 1
             cliente1 = Cliente(
                 nombre="Juan Pérez García",
                 dni="12345678",
                 direccion="Av. Los Olivos 123, Lima",
-                telefono="987654321"
+                telefono="987654321",
+                trabajador_id=trabajador_id  
             )
             db.session.add(cliente1)
             db.session.flush()
             
-            # Préstamo para cliente 1
-            fecha_inicio1 = db.func.current_date()
+            # Préstamo para cliente 1 (activo con mora)
+            fecha_inicio1 = db.func.current_date() - text("INTERVAL '40 days'")  # Préstamo vencido
             prestamo1 = Prestamo(
                 cliente_id=cliente1.id,
                 monto_principal=Decimal('1000.00'),
                 interes=Decimal('20.00'),
                 monto_total=Decimal('1200.00'),
                 fecha_inicio=fecha_inicio1,
-                fecha_fin=fecha_inicio1 + text("INTERVAL '30 days'"),  # Añadir fecha_fin
+                fecha_fin=fecha_inicio1 + text("INTERVAL '30 days'"),
                 saldo=Decimal('1200.00'),
                 tipo_prestamo='CR',
                 tipo_frecuencia='Diario',
                 cuota_diaria=Decimal('40.00'),
-                estado='activo'
+                estado='vencido'
             )
             db.session.add(prestamo1)
+            db.session.flush()
+
+            # Cuota con mora para préstamo 1
+            cuota1 = Cuota(
+                prestamo_id=prestamo1.id,
+                monto=Decimal('40.00'),
+                fecha_pago=db.func.current_date(),
+                descripcion="Cuota con mora",
+                estado_pago='con_retraso'
+            )
+            db.session.add(cuota1)
             
             # Cliente 2 - con préstamo pagado
             cliente2 = Cliente(
                 nombre="María López Silva",
                 dni="87654321",
                 direccion="Jr. Las Flores 456, Lima",
-                telefono="912345678"
+                telefono="912345678",
+                trabajador_id=trabajador_id 
             )
             db.session.add(cliente2)
             db.session.flush()

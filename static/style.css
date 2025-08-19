@@ -15,7 +15,7 @@ h1, h2 {
 /* ---- ESTILOS DE LOGIN ---- */
 .login-container {
   max-width: 350px;
-  margin: 100px auto;
+  margin: 50px auto;
   background: #222;
   padding: 30px;
   border-radius: 8px;
@@ -105,6 +105,7 @@ header {
 }
 
 /* ---- RESUMEN ---- */
+/* 
 .resumen {
   background: #222;
   padding: 15px 20px;
@@ -124,6 +125,32 @@ header {
   flex-wrap: wrap;
   gap: 10px;
 }
+*/
+
+.resumen {
+  background: #222;
+  padding: 15px 20px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  min-height: 80px; /* Aproximadamente mitad de la altura original, ajusta según necesidad */
+  height: auto;
+  overflow-y: auto;
+}
+
+.resumen-grid {
+  display: grid; /* Cambia a grid para mejor control de columnas */
+  grid-template-columns: repeat(3, 1fr); /* 3 columnas iguales */
+  gap: 15px; /* Espacio entre elementos */
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #00bcd4;
+  align-items: center; /* Centra verticalmente los elementos */
+  justify-items: center; /* Centra horizontalmente los elementos */
+}
+
 
 /* ---- PESTAÑAS ---- */
 .tabs {
@@ -1068,4 +1095,38 @@ select:focus-visible {
 
 #historialCuotasModal tbody tr:hover {
   background-color: #e0e0e0 !important;
+}
+
+/* Estilo para el contenedor del nombre de la empresa */
+.company-name {
+    text-align: center;
+    margin-bottom: 20px; /* Espacio entre el nombre y el cuadro de login */
+}
+
+/* Estilo para el título del nombre de la empresa */
+.company-name h1 {
+    font-size: 3em; /* Ligeramente más pequeño para mejor proporción */
+    color: #00bcd4; /* Coincide con el color principal de la paleta */
+    font-weight: bold;
+    margin: 0;
+    padding: 10px 0;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3); /* Sombra suave para destacar */
+    transition: transform 0.3s ease; /* Animación suave al interactuar */
+}
+
+.company-name h1:hover {
+    transform: scale(1.02); /* Efecto sutil de escalado al pasar el mouse */
+}
+
+/* Estilos responsivos para el nombre de la empresa */
+@media (max-width: 768px) {
+    .company-name h1 {
+        font-size: 2.2em; /* Reducir tamaño en tablets */
+    }
+}
+
+@media (max-width: 480px) {
+    .company-name h1 {
+        font-size: 1.8em; /* Reducir más en móviles */
+    }
 }

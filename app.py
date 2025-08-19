@@ -73,12 +73,19 @@ class Cliente(db.Model):
     direccion = db.Column(db.Text)
     telefono = db.Column(db.String(20))
     fecha_registro = db.Column(db.DateTime, server_default=db.func.now())
+    trabajador_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True)
 
     prestamos = db.relationship('Prestamo', backref=db.backref('cliente', lazy=True))
+    trabajador = db.relationship('Usuario', backref=db.backref('clientes', lazy=True))
+
+    """def tiene_prestamo_activo(self):
+        Verifica si el cliente tiene al menos un préstamo activo
+        return any(p.estado == 'activo' for p in self.prestamos)"""
+
 
     def tiene_prestamo_activo(self):
         """Verifica si el cliente tiene al menos un préstamo activo"""
-        return any(p.estado == 'activo' for p in self.prestamos)
+        return any(p.estado in ['activo', 'vencido'] for p in self.prestamos)
 
     def to_dict(self):
         return {
@@ -89,7 +96,9 @@ class Cliente(db.Model):
             'telefono': self.telefono,
             'fecha_registro': self.fecha_registro.isoformat() if self.fecha_registro else None,
             'prestamos': [p.to_dict() for p in self.prestamos],
-            'tiene_prestamo_activo': self.tiene_prestamo_activo()
+            'tiene_prestamo_activo': self.tiene_prestamo_activo(),
+            'trabajador_id': self.trabajador_id,
+            'trabajador_nombre': self.trabajador.nombre if self.trabajador else None
         }
 
 
@@ -113,7 +122,6 @@ class Prestamo(db.Model):
     cuota_diaria = db.Column(db.Numeric(10, 2), default=0.0)
     deuda_vencida = db.Column(db.Numeric(10, 2), default=0.0)
     prestamo_refinanciado_id = db.Column(db.Integer, db.ForeignKey('prestamos.id'), nullable=True)
-
     cuotas = db.relationship('Cuota', backref=db.backref('prestamo', lazy=True))
 
     def calcular_dias_transcurridos(self):
@@ -122,51 +130,46 @@ class Prestamo(db.Model):
             hoy = get_current_date()
             self.dt = (hoy - self.fecha_inicio).days
         return self.dt
-
+    #BORRAR SI SALE MAL
     def calcular_deuda_vencida(self):
         """
-        Calcula la deuda vencida más precisa:
-        - Basada en días hábiles (máximo 22 días).
-        - Limitada al monto_total del préstamo.
-        - Acumula la diferencia entre lo que debía pagar y lo que realmente pagó.
+        Calcula la deuda vencida y la mora pendiente dinámicamente.
+        Devuelve deuda_vencida, deuda_vencida_base, mora_pendiente.
         """
         if self.estado not in ['activo', 'vencido']:
             self.deuda_vencida = Decimal('0.0')
-            return 0.0
-        
+            self.saldo = Decimal('0.0')
+            return 0.0, 0.0, 0.0
+
         hoy = get_current_date()
-        
-        # Manejar caso en que fecha_fin es None
-        fecha_fin = self.fecha_fin
-        if fecha_fin is None:
-            # Calcular fecha_fin como fecha_inicio + 30 días si no está definida
-            if self.fecha_inicio:
-                fecha_fin = self.fecha_inicio + timedelta(days=30)
-            else:
-                # Si fecha_inicio también es None, asumir 0 días hábiles
-                self.deuda_vencida = Decimal('0.0')
-                return 0.0
-        
+        fecha_fin = self.fecha_fin or (self.fecha_inicio + timedelta(days=30))
         dias_transcurridos = calcular_dias_habiles(self.fecha_inicio, min(hoy, fecha_fin))
-        
-        # Lo que debería haber pagado hasta ahora (máximo 22 cuotas)
+
+        # Calcular deuda esperada sin mora
         deuda_esperada = Decimal(str(dias_transcurridos)) * self.cuota_diaria
-        
-        # Lo que realmente ha pagado
         total_pagado = sum(Decimal(str(cuota.monto)) for cuota in self.cuotas)
-        
-        # La diferencia es la deuda vencida, limitada al monto_total
-        deuda_vencida = min(max(Decimal('0.0'), deuda_esperada - total_pagado), self.monto_total)
-        self.deuda_vencida = deuda_vencida
-        
-        # Actualizar estado si está vencido
-        if fecha_fin and hoy > fecha_fin and self.saldo > 0:
+        deuda_vencida_base = max(Decimal('0.0'), deuda_esperada - total_pagado)
+
+        # Calcular mora si el préstamo está vencido
+        mora_total = Decimal('0.0')
+        if hoy > fecha_fin and self.saldo > 0:
+            dias_vencidos = calcular_dias_habiles(fecha_fin, hoy)  # Usar días hábiles para consistencia
+            mora_diaria = Decimal('0.005') * self.monto_total
+            mora_total = mora_diaria * Decimal(str(max(0, dias_vencidos)))
+
+        # Calcular mora pendiente
+        mora_pendiente = max(Decimal('0.0'), mora_total - (total_pagado - deuda_esperada if total_pagado > deuda_esperada else Decimal('0.0')))
+        self.deuda_vencida = deuda_vencida_base + mora_pendiente
+        self.saldo = self.monto_total - total_pagado + mora_total
+
+        # Actualizar estado
+        if hoy > fecha_fin and self.saldo > 0:
             self.estado = 'vencido'
         elif self.estado == 'vencido' and self.saldo <= 0:
             self.estado = 'pagado'
             self.fecha_pago_completo = get_current_date()
-        
-        return float(deuda_vencida)
+
+        return float(self.deuda_vencida), float(deuda_vencida_base), float(mora_pendiente)
 
     def calcular_estado_pago_cuota(self, fecha_cuota):
         """
@@ -195,14 +198,20 @@ class Prestamo(db.Model):
     def calcular_gastos_administrativos(self):
         """Calcula los gastos administrativos: 1 sol por cada 50 soles de monto principal, mínimo 1 sol."""
         monto_principal = Decimal(str(self.monto_principal))
+        interes = Decimal(str(self.interes))
+        # Solo calcular gastos administrativos si el interés es 10%
+        if interes != Decimal('10.0'):
+            return Decimal('0.0')
         if monto_principal <= 0:
             return Decimal('0.0')  # Mínimo 1 sol
         gastos = Decimal('0.0') + (monto_principal // 50) * Decimal('1.0')
         return gastos
+    
+    
 
     def to_dict(self):
         self.calcular_dias_transcurridos()
-        self.calcular_deuda_vencida()
+        deuda_vencida, deuda_vencida_base, mora_pendiente = self.calcular_deuda_vencida()
         
         return {
             'id': self.id,
@@ -215,6 +224,7 @@ class Prestamo(db.Model):
             'fecha_pago_completo': self.fecha_pago_completo.isoformat() if self.fecha_pago_completo else None,
             'estado': self.estado,
             'saldo': float(self.saldo),
+            'mora_pendiente': float(mora_pendiente),
             'tipo_prestamo': self.tipo_prestamo,
             'tipo_frecuencia': self.tipo_frecuencia,
             'dt': self.dt,
@@ -223,7 +233,7 @@ class Prestamo(db.Model):
             'prestamo_refinanciado_id': self.prestamo_refinanciado_id,
             'total_cuotas': len(self.cuotas),
             'cuotas': [c.to_dict() for c in self.cuotas],
-            'gastos_administrativos': float(self.calcular_gastos_administrativos())  # Nuevo campo
+            'gastos_administrativos': float(self.calcular_gastos_administrativos())
         }
 
 
@@ -394,11 +404,14 @@ def crear_cliente_con_prestamo():
     dni = cliente_data.get('dni')
     telefono = cliente_data.get('telefono')
     direccion = cliente_data.get('direccion')
+    trabajador_id = cliente_data.get('trabajador_id')
 
     if not nombre or not dni:
         return jsonify({'msg': 'Faltan campos de cliente'}), 400
     if Cliente.query.filter_by(dni=dni).first():
         return jsonify({'msg': 'Cliente con ese DNI ya existe'}), 400
+    if trabajador_id and not Usuario.query.filter_by(id=trabajador_id, rol='trabajador').first():
+        return jsonify({'msg': 'Trabajador no válido'}), 400
 
     prestamo_data = data.get('prestamo', {})
     monto_principal = prestamo_data.get('monto')
@@ -424,7 +437,8 @@ def crear_cliente_con_prestamo():
             nombre=nombre,
             dni=dni,
             telefono=telefono,
-            direccion=direccion
+            direccion=direccion,
+            trabajador_id=trabajador_id 
         )
         db.session.add(nuevo_cliente)
         db.session.flush()
@@ -703,7 +717,6 @@ def resumen_creditos():
 @app.route('/api/prestamos/<int:prestamo_id>/cuotas', methods=['GET'])
 @jwt_required()
 def obtener_cuotas_prestamo(prestamo_id):
-    """Obtiene todas las cuotas de un préstamo específico."""
     claims = get_jwt()
     if claims.get('rol') not in ['admin', 'trabajador']:
         return jsonify({'msg': 'No autorizado'}), 403
@@ -711,12 +724,16 @@ def obtener_cuotas_prestamo(prestamo_id):
     prestamo = Prestamo.query.get_or_404(prestamo_id)
     cuotas = Cuota.query.filter_by(prestamo_id=prestamo_id).order_by(Cuota.fecha_pago.desc()).all()
     
+    # Calcular deuda vencida y mora
+    deuda_vencida, deuda_vencida_base, mora_pendiente = prestamo.calcular_deuda_vencida()
+    
     return jsonify({
         'prestamo_id': prestamo_id,
         'prestamo_info': {
             'cliente_nombre': prestamo.cliente.nombre,
             'monto_total': float(prestamo.monto_total),
             'saldo_actual': float(prestamo.saldo),
+            'mora_total': float(mora_pendiente),
             'estado': prestamo.estado
         },
         'cuotas': [c.to_dict() for c in cuotas],
@@ -809,7 +826,13 @@ def api_clientes():
                 'telefono': cliente.telefono,
                 'fecha_registro': cliente.fecha_registro.isoformat() if cliente.fecha_registro else None,
                 'prestamos': [p.to_dict() for p in prestamos_activos],
-                'tiene_prestamo_activo': cliente.tiene_prestamo_activo()
+                'tiene_prestamo_activo': cliente.tiene_prestamo_activo(),
+                'trabajador_id': cliente.trabajador_id,
+                'trabajador_nombre': (
+                    cliente.trabajador.nombre if cliente.trabajador and cliente.trabajador.nombre 
+                    else cliente.trabajador.username if cliente.trabajador 
+                    else 'No asignado'
+                )
             }
             clientes_con_prestamos_activos.append(cliente_data)
 
@@ -913,7 +936,12 @@ def api_update_cliente(id):
     cliente.nombre = data.get('nombre', cliente.nombre)
     cliente.direccion = data.get('direccion', cliente.direccion)
     cliente.telefono = data.get('telefono', cliente.telefono)
-    
+    trabajador_id = data.get('trabajador_id')
+    if trabajador_id is not None:
+        if trabajador_id and not Usuario.query.filter_by(id=trabajador_id, rol='trabajador').first():
+            return jsonify({'msg': 'Trabajador no válido'}), 400
+        cliente.trabajador_id = trabajador_id
+        
     db.session.commit()
     return jsonify(cliente.to_dict()), 200
 
@@ -964,39 +992,48 @@ def registrar_cuota(prestamo_id):
     try:
         monto_cuota = Decimal(str(monto_cuota))
         prestamo.calcular_dias_transcurridos()
+        hoy = get_current_date()
+        fecha_fin = prestamo.fecha_fin or (prestamo.fecha_inicio + timedelta(days=30))
         
-        # Evitar pagos que excedan el saldo
+        # Calcular deuda vencida y mora antes del pago
+        deuda_vencida, deuda_vencida_base, mora_pendiente = prestamo.calcular_deuda_vencida()
+
         if prestamo.saldo <= 0:
             return jsonify({'msg': 'El préstamo ya está completamente pagado'}), 400
 
+        # Distribuir el pago: primero a la deuda base, luego a la mora
+        monto_a_deuda_base = min(monto_cuota, Decimal(str(deuda_vencida_base)))
+        monto_a_mora = min(monto_cuota - monto_a_deuda_base, Decimal(str(mora_pendiente)))
+        monto_real_cuota = monto_a_deuda_base + monto_a_mora
+
+        # Actualizar saldo
         saldo_completado = False
-        if prestamo.saldo <= monto_cuota:
+        if prestamo.saldo <= monto_real_cuota:
             monto_real_cuota = prestamo.saldo
             prestamo.saldo = Decimal('0.0')
             prestamo.estado = 'pagado'
             prestamo.fecha_pago_completo = get_current_date()
             saldo_completado = True
         else:
-            monto_real_cuota = monto_cuota
             prestamo.saldo -= monto_real_cuota
 
-        # Determinar estado del pago
+        # Registrar la cuota
         fecha_pago = get_current_date()
         estado_pago = prestamo.calcular_estado_pago_cuota(fecha_pago)
-
         nueva_cuota = Cuota(
             prestamo_id=prestamo_id,
             monto=monto_real_cuota,
             fecha_pago=fecha_pago,
-            descripcion=data.get('descripcion', 'Cuota diaria'),
+            descripcion=f'Cuota diaria (deuda: {monto_a_deuda_base}, mora: {monto_a_mora})',
             estado_pago=estado_pago
         )
         db.session.add(nueva_cuota)
         
-        prestamo.calcular_deuda_vencida()
+        # Recalcular deuda vencida
+        deuda_vencida, deuda_vencida_base, mora_pendiente = prestamo.calcular_deuda_vencida()
         db.session.commit()
 
-        message = 'Cuota registrada exitosamente'
+        message = f'Cuota registrada exitosamente (deuda base: {monto_a_deuda_base}, mora: {monto_a_mora})'
         if saldo_completado:
             message = '¡PRÉSTAMO PAGADO COMPLETAMENTE! La cuota ha liquidado el saldo pendiente.'
 
@@ -1004,7 +1041,8 @@ def registrar_cuota(prestamo_id):
             'msg': message,
             'prestamo_completado': saldo_completado,
             'prestamo': prestamo.to_dict(),
-            'cuota': nueva_cuota.to_dict()
+            'cuota': nueva_cuota.to_dict(),
+            'mora_pendiente': float(mora_pendiente)
         }), 200
 
     except Exception as e:

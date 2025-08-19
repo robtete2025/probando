@@ -119,7 +119,7 @@ async function cargarClientesAdmin() {
         tBody.innerHTML = '';
         
         if (data.length === 0) {
-            tBody.innerHTML = '<tr><td colspan="17" class="text-center">No hay clientes con préstamos activos.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="18" class="text-center">No hay clientes con préstamos activos.</td></tr>';
             return;
         }
 
@@ -159,6 +159,7 @@ async function cargarClientesAdmin() {
                         <td>${cliente.nombre || ''}</td>
                         <td>${cliente.direccion || ''}</td>
                         <td>${cliente.telefono || ''}</td>
+                        <td>${cliente.trabajador_nombre || 'No asignado'}</td> 
                         <td>${formatearMoneda(prestamo.monto_principal)}</td>
                         <td><strong>${formatearMoneda(prestamo.monto_total)}</strong></td>
                         <td>${formatearMoneda(prestamo.saldo)}</td>
@@ -172,7 +173,7 @@ async function cargarClientesAdmin() {
                         <td><span class="${getEstadoBadgeClass(prestamo.estado)}">${prestamo.estado.toUpperCase()}</span></td>
                         <td class="actions-cell">
                             <div class="action-buttons">
-                                <button class="action-btn" onclick="abrirEditClienteModal(${cliente.id}, '${cliente.nombre}', '${cliente.direccion}', '${cliente.telefono}')" title="Editar Cliente">
+                                <button class="action-btn" onclick="abrirEditClienteModal(${cliente.id}, '${cliente.nombre}', '${cliente.direccion}', '${cliente.telefono}', ${cliente.trabajador_id || 'null'})" title="Editar Cliente">
                                     <i class="fas fa-edit"></i>
                                 </button>
                                 <button class="action-btn delete-btn" onclick="eliminarCliente(${cliente.id})" title="Eliminar Cliente">
@@ -213,14 +214,14 @@ async function cargarClientesTrabajador() {
         const { res, data } = await fetchJSON('/api/clientes');
         if (!res.ok) {
             console.error('Error al cargar clientes:', data?.msg || res.statusText);
-            tBody.innerHTML = '<tr><td colspan="16">Error al cargar clientes.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="17">Error al cargar clientes.</td></tr>';
             return;
         }
 
         tBody.innerHTML = '';
         
         if (data.length === 0) {
-            tBody.innerHTML = '<tr><td colspan="16" class="text-center">No hay clientes con préstamos activos.</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="17" class="text-center">No hay clientes con préstamos activos.</td></tr>';
             return;
         }
 
@@ -258,6 +259,7 @@ async function cargarClientesTrabajador() {
                         <td>${cliente.nombre || ''}</td>
                         <td>${cliente.direccion || ''}</td>
                         <td>${cliente.telefono || ''}</td>
+                        <td>${cliente.trabajador_nombre || 'No asignado'}</td>
                         <td>${formatearMoneda(prestamo.monto_principal)}</td>
                         <td><strong>${formatearMoneda(prestamo.monto_total)}</strong></td>
                         <td>${formatearMoneda(prestamo.saldo)}</td>
@@ -288,6 +290,25 @@ async function cargarClientesTrabajador() {
     } catch (error) {
         console.error('Error al cargar clientes:', error);
         tBody.innerHTML = '<tr><td colspan="16">Error de conexión al servidor.</td></tr>';
+    }
+}
+
+async function cargarTrabajadoresSelect(selectId) {
+    try {
+        const { res, data } = await fetchJSON('/api/trabajadores');
+        if (res.ok) {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '<option value="">Seleccione un trabajador</option>';
+            
+            data.forEach(trabajador => {
+                const option = document.createElement('option');
+                option.value = trabajador.id;
+                option.textContent = `${trabajador.nombre || trabajador.username} - ${trabajador.dni || 'N/A'}`;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error al cargar trabajadores:', error);
     }
 }
 
@@ -462,6 +483,7 @@ function mostrarHistorialCuotas(data) {
             <h4>Préstamo de ${data.prestamo_info.cliente_nombre}</h4>
             <p><strong>Monto Total:</strong> ${formatearMoneda(data.prestamo_info.monto_total)}</p>
             <p><strong>Saldo Actual:</strong> ${formatearMoneda(data.prestamo_info.saldo_actual)}</p>
+            <p><strong>Mora Total:</strong> ${formatearMoneda(data.prestamo_info.mora_total)}</p>
             <p><strong>Estado:</strong> <span class="${getEstadoBadgeClass(data.prestamo_info.estado)}">${data.prestamo_info.estado.toUpperCase()}</span></p>
         `;
     }
@@ -480,7 +502,7 @@ function mostrarHistorialCuotas(data) {
             tbody.appendChild(tr);
         });
     } else {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center">No hay cuotas registradas</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">No hay cuotas registradas</td></tr>';
     }
     
     totalPagado.textContent = formatearMoneda(data.total_pagado || 0);
@@ -507,22 +529,20 @@ async function calcularCuotaSugerida(prestamoId) {
                     const cuotaDiariaText = cells[13]?.textContent || 'S/ 0.00';
                     const cuotaDiaria = parseFloat(cuotaDiariaText.replace('S/ ', ''));
                     
-                    // Limitar deuda_vencida a monto_total
-                    const deudaVencidaLimitada = Math.min(deudaVencida, montoTotal);
-                    
                     const cuotaInput = document.getElementById('cuotaMonto');
                     const sugerenciaDiv = document.getElementById('cuotaSugerencia');
                     
-                    if (deudaVencidaLimitada > 0) {
-                        cuotaInput.placeholder = `Sugerido: S/ ${deudaVencidaLimitada.toFixed(2)}`;
+                    if (deudaVencida > 0) {
+                        // Incluir deuda vencida (que ahora incluye mora)
+                        cuotaInput.placeholder = `Sugerido: ${formatearMoneda(deudaVencida)}`;
                         sugerenciaDiv.innerHTML = `
                             <i class="fas fa-exclamation-triangle"></i>
-                            Deuda vencida: ${formatearMoneda(deudaVencidaLimitada)} (limitada al monto total de ${formatearMoneda(montoTotal)}) - Se sugiere pagar esta cantidad para ponerse al día.
+                            Deuda vencida (incluye mora): ${formatearMoneda(deudaVencida)} - Se sugiere pagar esta cantidad para ponerse al día.
                         `;
                         sugerenciaDiv.className = 'sugerencia-alerta';
-                        cuotaInput.value = deudaVencidaLimitada.toFixed(2);
+                        cuotaInput.value = deudaVencida.toFixed(2);
                     } else {
-                        cuotaInput.placeholder = `Cuota diaria: S/ ${cuotaDiaria.toFixed(2)}`;
+                        cuotaInput.placeholder = `Cuota diaria: ${formatearMoneda(cuotaDiaria)}`;
                         sugerenciaDiv.innerHTML = `
                             <i class="fas fa-info-circle"></i>
                             Cliente al día. Cuota diaria sugerida: ${formatearMoneda(cuotaDiaria)}
@@ -644,6 +664,7 @@ function abrirClienteModal() {
     if (montoTotalDisplay) {
         montoTotalDisplay.textContent = formatearMoneda(0);
     }
+    cargarTrabajadoresSelect('clienteTrabajadorInput');
 }
 
 function cerrarClienteModal() {
@@ -651,12 +672,15 @@ function cerrarClienteModal() {
     document.getElementById('clienteForm').reset();
 }
 
-function abrirEditClienteModal(id, nombre, direccion, telefono) {
+function abrirEditClienteModal(id, nombre, direccion, telefono, trabajador_id) {
     document.getElementById('editClienteId').value = id;
     document.getElementById('editClienteNombre').value = nombre;
     document.getElementById('editClienteDireccion').value = direccion || '';
     document.getElementById('editClienteTelefono').value = telefono || '';
+    document.getElementById('editClienteTrabajador').value = trabajador_id || '';
     document.getElementById('editClienteModal').style.display = 'block';
+
+    cargarTrabajadoresSelect('editClienteTrabajador');
 }
 
 function cerrarEditClienteModal() {
@@ -1109,7 +1133,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     nombre: document.getElementById('clienteNombreInput').value,
                     dni: document.getElementById('clienteDniInput').value,
                     telefono: document.getElementById('clienteTelefonoInput').value,
-                    direccion: document.getElementById('clienteLugarInput').value
+                    direccion: document.getElementById('clienteLugarInput').value,
+                    trabajador_id: document.getElementById('clienteTrabajadorInput').value || null
                 };
 
                 const prestamoData = {
@@ -1212,8 +1237,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const nombre = document.getElementById('editClienteNombre').value;
                 const direccion = document.getElementById('editClienteDireccion').value;
                 const telefono = document.getElementById('editClienteTelefono').value;
+                const trabajador_id = document.getElementById('editClienteTrabajador').value || null;
 
-                const body = { nombre, direccion, telefono };
+                const body = { nombre, direccion, telefono, trabajador_id  };
 
                 try {
                     const { res, data } = await fetchJSON(`/api/clientes/${id}`, 'PUT', body);
